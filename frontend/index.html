@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — Simple Login</title>
+
+  <script>
+    (function() {
+      var saved = localStorage.getItem('color-scheme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+
+  <!--
+    SL-001: CDN strategy
+    - Bootstrap 5.3.3 (CSS + JS bundle) via jsDelivr CDN with SRI
+    - Bootstrap Icons 1.11.3 (icon set for social buttons) via jsDelivr CDN with SRI
+    - Google Fonts: Inter (variable font) for typography
+    NOTE: SRI hashes below are taken from the official Bootstrap 5.3.3 docs.
+    TODO(SL-008 / Security agent): re-verify SRI hashes for Bootstrap Icons and confirm
+    integrity metadata is up-to-date when the CDN is upgraded.
+  -->
+
+  <!-- Google Font: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  />
+
+  <!-- Bootstrap Icons 1.11.3 -->
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    crossorigin="anonymous"
+  />
+
+  <!-- App stylesheet -->
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <main class="login-page">
+    <div class="container-fluid px-3">
+      <div class="row justify-content-center align-items-center min-vh-100 g-0">
+        <div class="col-12 col-sm-10 col-md-8 col-lg-5 col-xl-4">
+
+          <!-- Login card -->
+          <section class="login-card shadow-sm" aria-labelledby="login-heading">
+
+            <!-- Theme toggle -->
+            <button
+              type="button"
+              id="themeToggle"
+              class="theme-toggle"
+              aria-label="Switch to dark mode"
+            >
+              <i class="bi bi-moon" aria-hidden="true"></i>
+            </button>
+
+            <!-- Brand / logo placeholder -->
+            <div class="login-brand">
+              <div class="login-brand-mark" aria-hidden="true">
+                <i class="bi bi-shield-lock-fill"></i>
+              </div>
+              <span class="login-brand-name">Acme</span>
+            </div>
+
+            <header class="login-header">
+              <h1 id="login-heading" class="login-title">Welcome back</h1>
+              <p class="login-subtitle">Sign in to continue to your account</p>
+            </header>
+
+            <!-- Mock success / status message -->
+            <div
+              id="formStatus"
+              class="form-status"
+              role="status"
+              aria-live="polite"
+              hidden
+            ></div>
+
+            <form id="loginForm" class="login-form" novalidate autocomplete="on">
+              <!-- Email -->
+              <div class="form-group">
+                <label for="email" class="form-label">Email</label>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  class="form-control"
+                  placeholder="you@example.com"
+                  autocomplete="username"
+                  required
+                  aria-describedby="emailError"
+                />
+                <div id="emailError" class="error-message" role="alert"></div>
+              </div>
+
+              <!-- Password -->
+              <div class="form-group">
+                <div class="form-label-row">
+                  <label for="password" class="form-label">Password</label>
+                  <a href="#" class="link-muted forgot-link">Forgot password?</a>
+                </div>
+                <div class="password-field">
+                  <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    class="form-control"
+                    placeholder="Enter your password"
+                    autocomplete="current-password"
+                    minlength="8"
+                    required
+                    aria-describedby="passwordError"
+                  />
+                  <button
+                    type="button"
+                    id="togglePassword"
+                    class="password-toggle"
+                    aria-label="Show password"
+                    aria-pressed="false"
+                  >
+                    <i class="bi bi-eye" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div id="passwordError" class="error-message" role="alert"></div>
+              </div>
+
+              <!-- Remember me -->
+              <div class="form-check remember-row">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  id="rememberMe"
+                  name="rememberMe"
+                />
+                <label class="form-check-label" for="rememberMe">
+                  Remember me for 30 days
+                </label>
+              </div>
+
+              <!-- Primary submit -->
+              <button type="submit" class="btn btn-primary btn-lg w-100 btn-signin">
+                Sign in
+              </button>
+
+              <!-- Divider -->
+              <div class="divider" role="separator" aria-label="Or continue with">
+                <span>or continue with</span>
+              </div>
+
+              <!-- Social login buttons -->
+              <div class="social-buttons" role="group" aria-label="Social sign-in options">
+                <button
+                  type="button"
+                  class="btn btn-social"
+                  data-provider="google"
+                  aria-label="Sign in with Google"
+                >
+                  <i class="bi bi-google" aria-hidden="true"></i>
+                  <span class="social-label">Google</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-social"
+                  data-provider="facebook"
+                  aria-label="Sign in with Facebook"
+                >
+                  <i class="bi bi-facebook" aria-hidden="true"></i>
+                  <span class="social-label">Facebook</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-social"
+                  data-provider="apple"
+                  aria-label="Sign in with Apple"
+                >
+                  <i class="bi bi-apple" aria-hidden="true"></i>
+                  <span class="social-label">Apple</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-social"
+                  data-provider="github"
+                  aria-label="Sign in with GitHub"
+                >
+                  <i class="bi bi-github" aria-hidden="true"></i>
+                  <span class="social-label">GitHub</span>
+                </button>
+              </div>
+            </form>
+
+            <!-- Footer -->
+            <footer class="login-footer">
+              <p class="signup-prompt">
+                Don't have an account?
+                <a href="#" class="link-accent">Sign up</a>
+              </p>
+            </footer>
+          </section>
+
+          <p class="legal-note">
+            &copy; <span id="copyrightYear"></span> Acme. All rights reserved.
+          </p>
+
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bootstrap 5.3.3 JS bundle -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+    crossorigin="anonymous"
+  ></script>
+
+  <!-- App script -->
+  <script src="js/app.js" defer></script>
+</body>
+</html>
