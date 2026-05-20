@@ -1,0 +1,58 @@
+# -----------------------------------------------------------------------------
+# Backend .dockerignore
+# -----------------------------------------------------------------------------
+# Applies to the `./backend` build context used by both the API and the
+# Worker Dockerfiles. Keeping the context lean speeds up `docker build`
+# (less data to send to the daemon) and prevents host-only artefacts from
+# being baked into intermediate image layers.
+
+# Build outputs and intermediate artefacts — must be rebuilt inside the image
+**/bin/
+**/obj/
+**/out/
+**/publish/
+**/artifacts/
+
+# Test source — production images do not ship tests. The test .csproj
+# files ARE intentionally kept in context because the solution-level
+# `dotnet restore DocuPilot.sln` walks every project listed in the .sln
+# (omitting them would fail the restore step). Only the test source code
+# and assets are excluded.
+tests/**/*.cs
+tests/**/appsettings*.json
+tests/**/xunit.runner.json
+
+# IDE / editor noise
+**/*.user
+**/*.suo
+**/.vs/
+**/.vscode/
+**/.idea/
+
+# Logs and temp files
+**/*.log
+**/[Ll]ogs/
+**/TestResults/
+
+# OS noise
+**/.DS_Store
+**/Thumbs.db
+**/desktop.ini
+
+# Documentation lives outside the runtime image
+**/*.md
+
+# Secrets / local config that must never enter an image
+**/*.env
+**/*.env.*
+!**/.env.example
+**/*.pfx
+**/*.key
+**/secrets.json
+**/appsettings.*.Local.json
+**/appsettings.Production.json
+
+# Defensive — the build context is `./backend`, so .git wouldn't be picked
+# up anyway, but listed for clarity.
+**/.git/
+**/.gitignore

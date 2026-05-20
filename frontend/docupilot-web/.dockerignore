@@ -1,0 +1,52 @@
+# -----------------------------------------------------------------------------
+# docupilot-web .dockerignore
+# -----------------------------------------------------------------------------
+# Applies to the `./frontend/docupilot-web` build context. Excluding these
+# from the daemon-uploaded context (a) speeds up `docker build` start, and
+# (b) ensures the in-image `npm ci` produces a fresh node_modules tree
+# rather than copying a host one with native bindings compiled for a
+# different platform.
+
+# Host-installed dependencies — must be reinstalled inside the image
+node_modules/
+
+# Build outputs — must be rebuilt inside the image
+dist/
+.angular/
+
+# Logs and temp
+*.log
+npm-debug.log*
+.cache/
+
+# IDE / editor noise
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentation does not belong in the runtime image
+*.md
+
+# Secrets / local env files — must never enter an image
+.env
+.env.*
+!.env.example
+
+# Git metadata (the build context is the project dir; .git lives at
+# code/.git so this is mostly defensive)
+.git/
+.gitignore
+
+# Test-only artefacts — production image does not need them. Note: test
+# .spec.ts source IS included in the context because the production
+# `npm run build` step does not import them and pruning them here saves
+# only a trivial amount of context size while complicating Angular's
+# build inputs. Keep it simple and ship the spec files into the build
+# stage; they evaporate after `npm run build` anyway because they are
+# not referenced from main.ts.
