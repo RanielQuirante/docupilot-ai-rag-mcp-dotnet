@@ -21,9 +21,12 @@
 
     <!-- Logging -->
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
 
-    <!-- API documentation -->
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+    <!-- API documentation. 10.x line aligns with .NET 10 + Microsoft.OpenApi 2.0;
+         earlier 7.x binds to Microsoft.OpenApi 1.6 and fails at runtime against
+         the 2.0 assembly that Microsoft.AspNetCore.OpenApi 10.0.x pulls in. -->
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
 
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

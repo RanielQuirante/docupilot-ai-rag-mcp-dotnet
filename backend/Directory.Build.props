@@ -11,4 +11,13 @@
     <NoWarn>$(NoWarn);CA1014</NoWarn>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Phase 1 assembly versioning. Surfaced via AssemblyInformationalVersionAttribute,
+         read by the /health endpoint to populate the response 'version' field. -->
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <InformationalVersion>0.1.0</InformationalVersion>
+  </PropertyGroup>
+
 </Project>
