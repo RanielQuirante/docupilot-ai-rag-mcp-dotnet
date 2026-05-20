@@ -21,11 +21,11 @@ code/
 
 ## Tech Stack (Planned)
 
-- **Backend:** .NET 8 Web API, EF Core, Clean Architecture
-- **Frontend:** Angular + Tailwind CSS (current `frontend/` contains an early static prototype)
-- **Database:** SQL Server or PostgreSQL
-- **Vector DB:** Qdrant or pgvector
-- **LLM Runtime:** Ollama or vLLM-compatible API
+- **Backend:** .NET 10 (LTS) Web API, EF Core 10, Clean Architecture
+- **Frontend:** Angular 21 + Tailwind CSS 3 (current `frontend/` contains an early static prototype, to be replaced)
+- **Database:** SQL Server 2022 (Linux container)
+- **Vector DB:** Qdrant
+- **LLM Runtime:** Ollama (private LLM)
 - **Container:** Docker Compose
 
 ## Current State
