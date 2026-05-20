@@ -22,7 +22,7 @@ code/
 ## Tech Stack (Planned)
 
 - **Backend:** .NET 10 (LTS) Web API, EF Core 10, Clean Architecture
-- **Frontend:** Angular 21 + Tailwind CSS 3 (current `frontend/` contains an early static prototype, to be replaced)
+- **Frontend:** Angular 21 + Tailwind CSS 4.3 (current `frontend/` contains an early static prototype, to be replaced)
 - **Database:** SQL Server 2022 (Linux container)
 - **Vector DB:** Qdrant
 - **LLM Runtime:** Ollama (private LLM)
