@@ -1,0 +1,104 @@
+# =============================================================================
+# DocuPilot AI — Phase 1 Docker Compose stack
+# =============================================================================
+# Six services: docupilot-api, docupilot-worker, docupilot-web, sqlserver,
+# qdrant, ollama. All share the default compose bridge network (services
+# reach each other by service name, e.g. http://docupilot-api:8080). Stateful
+# services use named volumes so data survives `docker compose down` (but is
+# removed by `docker compose down -v`).
+#
+# Usage:
+#   copy .env.example .env      # (Windows)  |  cp .env.example .env  (POSIX)
+#   docker compose up -d --build
+#   docker compose ps
+#   docker compose down         # stop, keep volumes
+#   docker compose down -v      # stop AND wipe volumes
+#
+# Ports are overridable via .env (${VAR:-default} syntax) so a developer who
+# already runs SQL Server natively on 1433 (etc.) can remap without editing
+# this file. See .env.example for the full variable list.
+#
+# Phase 1 scope note: no `healthcheck:` blocks — `depends_on:` only controls
+# start ORDER, not readiness. SQL Server takes ~30-60s to accept connections
+# on first boot; the API does not yet open a DB connection at startup so this
+# is acceptable for the foundation. Proper healthchecks land in a later phase.
+# =============================================================================
+
+services:
+  # ---- .NET 10 Web API (composition root, /health, Swagger) -----------------
+  docupilot-api:
+    build:
+      context: ./backend
+      dockerfile: src/DocuPilot.Api/Dockerfile
+    image: docupilot-api:dev
+    ports:
+      - "${API_PORT:-5010}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      - sqlserver
+      - qdrant
+      - ollama
+    restart: unless-stopped
+
+  # ---- .NET 10 background worker (document pipeline host; no HTTP) -----------
+  docupilot-worker:
+    build:
+      context: ./backend
+      dockerfile: src/DocuPilot.Worker/Dockerfile
+    image: docupilot-worker:dev
+    environment:
+      DOTNET_ENVIRONMENT: Development
+    depends_on:
+      - sqlserver
+      - qdrant
+      - ollama
+    restart: unless-stopped
+
+  # ---- Angular 21 SPA served by NGINX (also reverse-proxies /api/*) ---------
+  docupilot-web:
+    build:
+      context: ./frontend/docupilot-web
+    image: docupilot-web:dev
+    ports:
+      - "${WEB_PORT:-4210}:80"
+    depends_on:
+      - docupilot-api
+    restart: unless-stopped
+
+  # ---- SQL Server 2022 (relational metadata store) --------------------------
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${SA_PASSWORD}"
+    ports:
+      - "${SQL_PORT:-1433}:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    restart: unless-stopped
+
+  # ---- Qdrant vector database (HTTP 6333 + gRPC 6334) -----------------------
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  # ---- Ollama local LLM runtime (no model pulled in Phase 1) ----------------
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+# ---- Named volumes for stateful services -----------------------------------
+volumes:
+  sqlserver-data:
+  qdrant-data:
+  ollama-models:
