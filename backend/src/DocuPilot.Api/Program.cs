@@ -1,4 +1,4 @@
-using DocuPilot.Application;
+using DocuPilot.Services;
 using DocuPilot.Infrastructure;
 using Serilog;
 
@@ -35,8 +35,8 @@ try
             .AllowAnyMethod());
     });
 
-    // Compose application + infrastructure layers (stubs in Phase 1).
-    builder.Services.AddApplication();
+    // Compose services + infrastructure layers (stubs in Phase 1.5).
+    builder.Services.AddServices();
     builder.Services.AddInfrastructure(builder.Configuration);
 
     // System clock for testable timestamp generation in HealthController.

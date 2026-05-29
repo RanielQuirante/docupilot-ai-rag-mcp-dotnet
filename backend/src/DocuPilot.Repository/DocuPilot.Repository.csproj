@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- Repository wraps the EF Core DbContext (owned by Infrastructure). EF Core
+         is referenced here so repository implementations can take DocuPilotDbContext
+         and query DbSet<T>. Version flows from Central Package Management. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DocuPilot.Models\DocuPilot.Models.csproj" />
+  </ItemGroup>
+
+</Project>

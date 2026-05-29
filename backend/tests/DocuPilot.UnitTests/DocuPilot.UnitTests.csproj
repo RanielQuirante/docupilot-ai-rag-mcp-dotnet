@@ -19,8 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\DocuPilot.Application\DocuPilot.Application.csproj" />
-    <ProjectReference Include="..\..\src\DocuPilot.Domain\DocuPilot.Domain.csproj" />
+    <ProjectReference Include="..\..\src\DocuPilot.Services\DocuPilot.Services.csproj" />
+    <ProjectReference Include="..\..\src\DocuPilot.Models\DocuPilot.Models.csproj" />
   </ItemGroup>
 
 </Project>

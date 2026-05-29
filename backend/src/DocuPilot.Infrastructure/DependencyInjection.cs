@@ -1,3 +1,4 @@
+using DocuPilot.Repository;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,8 +19,14 @@ public static class DependencyInjection
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        // No registrations in Phase 1. DocuPilotDbContext, IFileStorage, IVectorStore,
-        // and ILlmClient land in later phases.
+        // Data-access registration is an Infrastructure concern (Infrastructure owns the
+        // DbContext that repositories depend on), so AddInfrastructure internally calls
+        // AddRepositories(). Callers (Api/Worker Program.cs) never call AddRepositories()
+        // directly — they only call AddServices() + AddInfrastructure(...).
+        services.AddRepositories();
+
+        // No further registrations in Phase 1.5. DocuPilotDbContext, IFileStorage,
+        // IVectorStore, and ILlmClient land in later phases.
         _ = configuration;
         return services;
     }

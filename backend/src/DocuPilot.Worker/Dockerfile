@@ -28,8 +28,9 @@ COPY Directory.Packages.props ./
 COPY DocuPilot.sln ./
 
 COPY src/DocuPilot.Api/DocuPilot.Api.csproj                       src/DocuPilot.Api/
-COPY src/DocuPilot.Application/DocuPilot.Application.csproj       src/DocuPilot.Application/
-COPY src/DocuPilot.Domain/DocuPilot.Domain.csproj                 src/DocuPilot.Domain/
+COPY src/DocuPilot.Services/DocuPilot.Services.csproj             src/DocuPilot.Services/
+COPY src/DocuPilot.Models/DocuPilot.Models.csproj                 src/DocuPilot.Models/
+COPY src/DocuPilot.Repository/DocuPilot.Repository.csproj         src/DocuPilot.Repository/
 COPY src/DocuPilot.Infrastructure/DocuPilot.Infrastructure.csproj src/DocuPilot.Infrastructure/
 COPY src/DocuPilot.Worker/DocuPilot.Worker.csproj                 src/DocuPilot.Worker/
 COPY tests/DocuPilot.UnitTests/DocuPilot.UnitTests.csproj         tests/DocuPilot.UnitTests/

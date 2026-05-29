@@ -5,7 +5,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DocuPilot.Domain\DocuPilot.Domain.csproj" />
+    <ProjectReference Include="..\DocuPilot.Repository\DocuPilot.Repository.csproj" />
+    <ProjectReference Include="..\DocuPilot.Models\DocuPilot.Models.csproj" />
   </ItemGroup>
 
 </Project>
