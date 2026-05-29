@@ -1,0 +1,22 @@
+<div class="flex h-full flex-col">
+  <div class="px-5 py-6">
+    <p class="text-xs font-semibold uppercase tracking-widest text-indigo-400">DocuPilot AI</p>
+    <p class="mt-1 text-sm font-medium text-slate-300">Document Intelligence</p>
+  </div>
+
+  <nav class="flex-1 space-y-1 px-3" aria-label="Primary">
+    @for (item of items; track item.path) {
+      <a
+        [routerLink]="item.path"
+        routerLinkActive="bg-slate-800 text-white"
+        class="block rounded-lg px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+      >
+        {{ item.label }}
+      </a>
+    }
+  </nav>
+
+  <div class="border-t border-slate-800 px-5 py-4">
+    <app-health-status />
+  </div>
+</div>

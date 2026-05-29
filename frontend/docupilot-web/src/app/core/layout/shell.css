@@ -1,0 +1,4 @@
+/* Layout is handled with Tailwind utilities in shell.html. */
+:host {
+  display: block;
+}

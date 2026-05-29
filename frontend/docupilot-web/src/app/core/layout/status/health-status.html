@@ -1,0 +1,12 @@
+<div class="flex items-center gap-2 text-xs" role="status" aria-live="polite">
+  @if (loading()) {
+    <span class="h-2 w-2 animate-pulse rounded-full bg-slate-400" aria-hidden="true"></span>
+    <span class="font-medium text-slate-400">Checking API&hellip;</span>
+  } @else if (failed()) {
+    <span class="h-2 w-2 rounded-full bg-red-500" aria-hidden="true"></span>
+    <span class="font-medium text-red-400">API unreachable</span>
+  } @else {
+    <span class="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true"></span>
+    <span class="font-medium text-emerald-400">API healthy</span>
+  }
+</div>
