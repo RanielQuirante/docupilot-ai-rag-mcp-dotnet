@@ -2,6 +2,7 @@ using DocuPilot.Infrastructure.FileStorage;
 using DocuPilot.Infrastructure.Llm;
 using DocuPilot.Infrastructure.Persistence;
 using DocuPilot.Infrastructure.TextExtraction;
+using DocuPilot.Infrastructure.Vector;
 using DocuPilot.Repository;
 using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
@@ -9,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Qdrant.Client;
 
 namespace DocuPilot.Infrastructure;
 
@@ -52,6 +54,13 @@ public static class DependencyInjection
         // api AND worker). Bound here so both hosts get identical options.
         services.Configure<LlmOptions>(configuration.GetSection(LlmOptions.SectionName));
 
+        // Phase 5: chunking / embedding / Qdrant bounds — env keys Chunking__* / Embedding__* /
+        // Qdrant__* (DA-043 wires these on api AND worker). Bound here so both hosts get identical
+        // options. ChunkingConfig backs the RecursiveCharacterChunker (registered in AddServices).
+        services.Configure<ChunkingConfig>(configuration.GetSection(ChunkingConfig.SectionName));
+        services.Configure<EmbeddingOptions>(configuration.GetSection(EmbeddingOptions.SectionName));
+        services.Configure<QdrantOptions>(configuration.GetSection(QdrantOptions.SectionName));
+
         // System clock for testable timestamp generation. LocalFileStorage (and other
         // Infrastructure timestamp consumers) depend on TimeProvider, so it MUST be
         // registered alongside the services that need it — registering it here keeps the
@@ -87,6 +96,33 @@ public static class DependencyInjection
             // A little headroom over the per-call timeout so the orchestrator's CTS fires first.
             client.Timeout = TimeSpan.FromSeconds(llmOptions.TimeoutSeconds + 30);
         });
+
+        // Phase 5: the embedding client as a typed HttpClient (IHttpClientFactory) targeting the
+        // in-network Ollama/OpenAI-compatible embedding server. A DEDICATED client distinct from the
+        // LLM client (different model + endpoint, ADR §2); the OllamaLlmClient is left untouched.
+        // Base address + timeout from EmbeddingOptions. Shared extension → api + worker compose the
+        // exact same client (no DA-021 drift).
+        var embeddingOptions = new EmbeddingOptions();
+        configuration.GetSection(EmbeddingOptions.SectionName).Bind(embeddingOptions);
+        services.AddHttpClient<IEmbeddingClient, OllamaEmbeddingClient>(client =>
+        {
+            client.BaseAddress = new Uri(embeddingOptions.BaseUrl);
+            // A little headroom over the per-call timeout so the orchestrator's CTS fires first.
+            client.Timeout = TimeSpan.FromSeconds(embeddingOptions.TimeoutSeconds + 15);
+        });
+
+        // Phase 5: the official Qdrant gRPC client (singleton — manages its own connection) + the
+        // IVectorStore adapter over it. Host/port/TLS from QdrantOptions (in-network gRPC :6334).
+        var qdrantOptions = new QdrantOptions();
+        configuration.GetSection(QdrantOptions.SectionName).Bind(qdrantOptions);
+        services.AddSingleton(_ => new QdrantClient(qdrantOptions.Host, qdrantOptions.GrpcPort, qdrantOptions.UseTls));
+        services.AddSingleton<IVectorStore, QdrantVectorStore>();
+
+        // Phase 5: the shared startup task that bootstraps the Qdrant collection on boot for BOTH
+        // api and worker (create-if-absent + dim-validate from IEmbeddingClient.Dimensions, ADR §3).
+        // Tolerant of Qdrant-not-ready (logs, does not crash-loop); fails loud on a dim mismatch.
+        // Mirrors the DatabaseMigrator startup pattern.
+        services.AddHostedService<QdrantCollectionBootstrapper>();
 
         // Data-access registration is an Infrastructure concern (Infrastructure owns the
         // DbContext that repositories depend on), so AddInfrastructure internally calls

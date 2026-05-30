@@ -27,19 +27,31 @@ export type DocumentStatus =
   | 'ExtractingText'
   | 'TextExtracted'
   | 'Classifying'
+  | 'Classified'
   | 'GeneratingEmbeddings'
   | 'ReadyForSearch'
   | 'Failed';
 
 /**
  * Non-terminal statuses — while in one of these, the pipeline is still working
- * and the page polls for live updates. Phase 4 adds `Classifying` so the UI
- * auto-advances `TextExtracted → Classifying → Classified` without a refresh.
+ * and the page polls for live updates. Phase 4 added `Classifying`; Phase 5
+ * (DA-041) adds `Classified` + `GeneratingEmbeddings` so the UI keeps
+ * auto-refreshing through the embedding stage, advancing
+ * `TextExtracted → Classifying → Classified → GeneratingEmbeddings → ReadyForSearch`
+ * without a manual reload. `ReadyForSearch` is the Phase-5 success terminal.
+ *
+ * `Classified` is non-terminal in Phase 5 because it is the hand-off marker the
+ * pass-3 embedding worker claims (`WHERE Status='Classified'` → `GeneratingEmbeddings`,
+ * backend DA-039/DA-040). Leaving it terminal would stall the poll at `Classified`
+ * and the user would never see the row advance to embedding/ready without a
+ * manual refresh. `ReadyForSearch` / `Failed` are the only terminal states.
  */
 export const NON_TERMINAL_STATUSES: readonly DocumentStatus[] = [
   'Queued',
   'ExtractingText',
   'Classifying',
+  'Classified',
+  'GeneratingEmbeddings',
 ];
 
 /**
@@ -115,6 +127,12 @@ export interface DocumentDetail {
    * extracted no fields. Schemaless (iterate keys; do NOT assume fixed fields).
    */
   readonly metadata: DocumentMetadata | null;
+  /**
+   * Number of embedded chunks for this document (Phase 5, backend DA-039).
+   * `0` until the doc reaches `ReadyForSearch`; `null` for older documents
+   * uploaded before chunk counting existed (handle absent gracefully).
+   */
+  readonly chunkCount: number | null;
 }
 
 /** `GET /api/documents/{id}/text` → 200 `DocumentTextResponse` / 404 (no text yet). */
@@ -135,6 +153,9 @@ export type AuditAction =
   | 'ClassificationStarted'
   | 'ClassificationSucceeded'
   | 'ClassificationFailed'
+  | 'EmbeddingStarted'
+  | 'EmbeddingSucceeded'
+  | 'EmbeddingFailed'
   | 'ReprocessQueued';
 
 /** One entry of `GET /api/documents/{id}/audit` (returned newest-first). */

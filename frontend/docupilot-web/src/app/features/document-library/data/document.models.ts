@@ -11,11 +11,12 @@
 
 /**
  * The processing-status state machine surfaced by the Phase-3 contract
- * (DA-024) and extended for Phase-4 classification (DA-032). Non-terminal
- * states (`Uploaded`/`Queued`/`ExtractingText`/`TextExtracted`/`Classifying`)
- * drive the library's live poll; `Classified`/`ReadyForSearch`/`Failed` are
- * terminal for the current pipeline. Kept as a string-literal union so the
- * badge map stays exhaustive while still tolerating an unknown server value.
+ * (DA-024), extended for Phase-4 classification (DA-032) and Phase-5
+ * embeddings (DA-039). Non-terminal states
+ * (`Uploaded`/`Queued`/`ExtractingText`/`TextExtracted`/`Classifying`/`GeneratingEmbeddings`)
+ * drive the library's live poll; `ReadyForSearch`/`Failed` are the terminal
+ * states for the current pipeline. Kept as a string-literal union so the badge
+ * map stays exhaustive while still tolerating an unknown server value.
  */
 export type DocumentStatus =
   | 'Uploaded'
@@ -36,6 +37,12 @@ export type DocumentStatus =
  * non-terminal — a `TextExtracted` doc is still awaiting classification, and
  * `Classifying` is mid-LLM, so the live poll must keep running through both so
  * the category chip appears as soon as the row reaches `Classified`.
+ *
+ * Phase-5 (DA-039/DA-042): `Classified` is no longer terminal — it is the
+ * hand-off marker the embedding stage (pass-3) claims, and `GeneratingEmbeddings`
+ * is mid-embedding. Both are added here so the live poll keeps refreshing through
+ * the new stage until the row reaches the `ReadyForSearch` success terminal.
+ * `ReadyForSearch`/`Failed` remain the only terminal states.
  */
 export const NON_TERMINAL_STATUSES: ReadonlySet<string> = new Set<DocumentStatus>([
   'Uploaded',
@@ -43,6 +50,8 @@ export const NON_TERMINAL_STATUSES: ReadonlySet<string> = new Set<DocumentStatus
   'ExtractingText',
   'TextExtracted',
   'Classifying',
+  'Classified',
+  'GeneratingEmbeddings',
 ]);
 
 /** True when the document's status is still expected to advance automatically. */

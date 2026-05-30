@@ -43,6 +43,7 @@ public sealed class DocumentService : IDocumentService
     private readonly IDocumentTextRepository _textRepository;
     private readonly IDocumentClassificationRepository _classificationRepository;
     private readonly IExtractedMetadataRepository _metadataRepository;
+    private readonly IDocumentChunkRepository _chunkRepository;
     private readonly IAuditRepository _auditRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileStorage _fileStorage;
@@ -55,6 +56,7 @@ public sealed class DocumentService : IDocumentService
         IDocumentTextRepository textRepository,
         IDocumentClassificationRepository classificationRepository,
         IExtractedMetadataRepository metadataRepository,
+        IDocumentChunkRepository chunkRepository,
         IAuditRepository auditRepository,
         IUnitOfWork unitOfWork,
         IFileStorage fileStorage,
@@ -66,6 +68,7 @@ public sealed class DocumentService : IDocumentService
         _textRepository = textRepository;
         _classificationRepository = classificationRepository;
         _metadataRepository = metadataRepository;
+        _chunkRepository = chunkRepository;
         _auditRepository = auditRepository;
         _unitOfWork = unitOfWork;
         _fileStorage = fileStorage;
@@ -198,6 +201,9 @@ public sealed class DocumentService : IDocumentService
         var classification = await _classificationRepository.GetByDocumentIdAsync(id, ct);
         var metadata = await _metadataRepository.GetByDocumentIdAsync(id, ct);
 
+        // Phase 5: chunk count (0 until embedded). Additive contract field (DA-039 §g).
+        var chunkCount = await _chunkRepository.CountByDocumentIdAsync(id, ct);
+
         return new DocumentDetail(
             document.Id,
             document.FileName,
@@ -210,7 +216,8 @@ public sealed class DocumentService : IDocumentService
             text?.CharCount,
             text?.ExtractedAt,
             classification is null ? null : ToClassificationDto(classification),
-            metadata is null ? null : ParseMetadata(metadata.MetadataJson));
+            metadata is null ? null : ParseMetadata(metadata.MetadataJson),
+            chunkCount);
     }
 
     public async Task<DocumentClassificationDto?> GetClassificationAsync(Guid id, CancellationToken ct)

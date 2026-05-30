@@ -37,6 +37,11 @@ public static class DependencyInjection
         services.AddScoped<IDocumentClassificationRepository, DocumentClassificationRepository>();
         services.AddScoped<IExtractedMetadataRepository, ExtractedMetadataRepository>();
 
+        // Phase 5 data-access seam: the chunk store (1:N child of Documents). Re-embed is a 1:N
+        // replace (delete-by-DocumentId + insert ordered set), staged for the IUnitOfWork
+        // transaction (DA-038 §P5.2.2).
+        services.AddScoped<IDocumentChunkRepository, DocumentChunkRepository>();
+
         return services;
     }
 }

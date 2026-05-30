@@ -47,6 +47,16 @@ public interface IDocumentRepository
     /// </summary>
     Task<bool> TryClaimForClassificationAsync(Guid id, CancellationToken ct);
 
+    /// <summary>
+    /// Atomically claims a <c>Classified</c> document for embedding, transitioning it to
+    /// <c>GeneratingEmbeddings</c> via a single guarded <c>ExecuteUpdateAsync</c>
+    /// (<c>WHERE Id = @id AND Status = Classified</c>). Returns <c>true</c> if this call won the
+    /// claim (affected rows = 1), <c>false</c> otherwise. Phase-5 pass-3 claim (ADR §5) — the
+    /// compare-and-swap analogue of <see cref="TryClaimForClassificationAsync"/>. Backed by
+    /// <c>IX_Documents_Status</c> (no new index — DA-038 §P5.4).
+    /// </summary>
+    Task<bool> TryClaimForEmbeddingAsync(Guid id, CancellationToken ct);
+
     /// <summary>Persists pending changes on the tracked document(s). Used after mutating a tracked entity.</summary>
     Task SaveChangesAsync(CancellationToken ct);
 
@@ -85,6 +95,24 @@ public interface IDocumentRepository
     /// Read-only / no-tracking; backed by <c>IX_Documents_Status</c> + <c>IX_AuditLogs_EntityId_CreatedAt</c>.
     /// </summary>
     Task<IReadOnlyList<Guid>> GetStaleClassifyingIdsAsync(DateTime cutoffUtc, CancellationToken ct);
+
+    /// <summary>
+    /// Returns the ids of the oldest <c>Classified</c> documents (FIFO by <c>UploadedAt ASC</c>),
+    /// up to <paramref name="max"/>. Phase-5 pass-3 selection (DA-040) — the read-only/no-tracking
+    /// analogue of <see cref="GetNextTextExtractedIdsAsync"/>; the actual claim is the atomic
+    /// <see cref="TryClaimForEmbeddingAsync"/> done inside <c>EmbedDocumentAsync</c> on each id.
+    /// Backed by <c>IX_Documents_Status</c>.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetNextClassifiedIdsAsync(int max, CancellationToken ct);
+
+    /// <summary>
+    /// Phase-5 stale-claim recovery (generalizes <see cref="GetStaleClassifyingIdsAsync"/> for the
+    /// embedding stage): returns the ids of documents stuck in <c>GeneratingEmbeddings</c> whose
+    /// most-recent <c>EmbeddingStarted</c> audit row is OLDER than <paramref name="cutoffUtc"/>
+    /// (a crash/host-cancellation left them claimed). The caller resets each to <c>Classified</c>.
+    /// Read-only / no-tracking; backed by <c>IX_Documents_Status</c> + <c>IX_AuditLogs_EntityId_CreatedAt</c>.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetStaleGeneratingEmbeddingsIdsAsync(DateTime cutoffUtc, CancellationToken ct);
 
     /// <summary>
     /// Returns one page of documents ordered by <c>UploadedAt DESC</c> (newest first,

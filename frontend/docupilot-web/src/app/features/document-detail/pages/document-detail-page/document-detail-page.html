@@ -76,6 +76,9 @@
             </span>
           }
         </div>
+        @if (chunkCountLabel(); as chunks) {
+          <p class="mt-1.5 text-xs text-slate-500 tabular-nums">{{ chunks }}</p>
+        }
       </div>
 
       <div class="flex flex-col items-end gap-1">

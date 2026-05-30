@@ -26,6 +26,8 @@ public sealed class DocuPilotDbContext : DbContext
 
     public DbSet<ExtractedMetadata> ExtractedMetadata => Set<ExtractedMetadata>();
 
+    public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

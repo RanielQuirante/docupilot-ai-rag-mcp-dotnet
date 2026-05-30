@@ -23,22 +23,29 @@ public sealed class DocumentProcessingWorkerTests
 {
     private readonly Mock<IDocumentProcessingService> _processor = new();
     private readonly Mock<IClassificationService> _classifier = new();
+    private readonly Mock<IEmbeddingService> _embedder = new();
     private readonly Mock<IDocumentRepository> _documents = new();
 
     public DocumentProcessingWorkerTests()
     {
-        // Sensible defaults so a test only sets up the pass it exercises; the other pass is empty.
+        // Sensible defaults so a test only sets up the pass it exercises; the other passes are empty.
         _documents
             .Setup(r => r.GetNextQueuedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Guid>());
         _documents
             .Setup(r => r.GetNextTextExtractedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Guid>());
+        _documents
+            .Setup(r => r.GetNextClassifiedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Guid>());
         _processor
             .Setup(p => p.RecoverStaleClaimsAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(0);
         _classifier
             .Setup(c => c.RecoverStaleClassifyingAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        _embedder
+            .Setup(e => e.RecoverStaleGeneratingEmbeddingsAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(0);
     }
 
@@ -47,6 +54,7 @@ public sealed class DocumentProcessingWorkerTests
         var services = new ServiceCollection();
         services.AddScoped(_ => _processor.Object);
         services.AddScoped(_ => _classifier.Object);
+        services.AddScoped(_ => _embedder.Object);
         services.AddScoped(_ => _documents.Object);
         var provider = services.BuildServiceProvider();
 
@@ -312,5 +320,184 @@ public sealed class DocumentProcessingWorkerTests
 
         _classifier.Verify(c => c.RecoverStaleClassifyingAsync(
             It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Phase 5 — DA-040: embedding pass (pass 3), Transient backoff, GeneratingEmbeddings stale sweep.
+    // ----------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Pass3_DrainsClassifiedIdsFifo_AndCallsEmbedDocumentAsyncPerId()
+    {
+        var id1 = Guid.CreateVersion7();
+        var id2 = Guid.CreateVersion7();
+
+        _documents
+            .SetupSequence(r => r.GetNextClassifiedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { id1, id2 })   // first tick: two docs
+            .ReturnsAsync(Array.Empty<Guid>()); // subsequent ticks: empty
+
+        var embedded = new List<Guid>();
+        var bothDone = new TaskCompletionSource();
+        _embedder
+            .Setup(e => e.EmbedDocumentAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>((id, _) =>
+            {
+                lock (embedded)
+                {
+                    embedded.Add(id);
+                    if (embedded.Count == 2)
+                    {
+                        bothDone.TrySetResult();
+                    }
+                }
+            })
+            .ReturnsAsync(ProcessingOutcome.Succeeded);
+
+        await RunUntilAsync(CreateSut(), bothDone.Task);
+
+        embedded.Should().Equal(id1, id2); // FIFO order preserved
+    }
+
+    [Fact]
+    public async Task Pass3_NotClaimed_SkipsAndContinues()
+    {
+        var id = Guid.CreateVersion7();
+        _documents
+            .SetupSequence(r => r.GetNextClassifiedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { id })
+            .ReturnsAsync(Array.Empty<Guid>());
+
+        var called = new TaskCompletionSource();
+        _embedder
+            .Setup(e => e.EmbedDocumentAsync(id, It.IsAny<CancellationToken>()))
+            .Callback(() => called.TrySetResult())
+            .ReturnsAsync(ProcessingOutcome.NotClaimed); // lost the race — must not throw, just move on
+
+        await RunUntilAsync(CreateSut(), called.Task);
+
+        _embedder.Verify(e => e.EmbedDocumentAsync(id, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task Pass3_OneDocumentThrows_DoesNotCrashLoop_AndEmbedsNext()
+    {
+        var poison = Guid.CreateVersion7();
+        var good = Guid.CreateVersion7();
+
+        _documents
+            .SetupSequence(r => r.GetNextClassifiedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { poison, good })
+            .ReturnsAsync(Array.Empty<Guid>());
+
+        var goodDone = new TaskCompletionSource();
+        _embedder
+            .Setup(e => e.EmbedDocumentAsync(poison, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+        _embedder
+            .Setup(e => e.EmbedDocumentAsync(good, It.IsAny<CancellationToken>()))
+            .Callback(() => goodDone.TrySetResult())
+            .ReturnsAsync(ProcessingOutcome.Succeeded);
+
+        await RunUntilAsync(CreateSut(), goodDone.Task);
+
+        _embedder.Verify(e => e.EmbedDocumentAsync(good, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task Pass3_Transient_LeavesDocAndBacksOff_DoesNotHotLoopTheEmbedder()
+    {
+        // A perpetually-down embedder/Qdrant: every embed returns Transient. With a backoff of N
+        // ticks, the embedding pass must NOT call EmbedDocumentAsync every tick — after the first
+        // Transient it skips the pass for N ticks. We let it run for a while and assert the embedder
+        // was hit only a SMALL number of times, not once per tick.
+        var id = Guid.CreateVersion7();
+        _documents
+            .Setup(r => r.GetNextClassifiedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { id }); // doc stays Classified (Transient never advances it)
+
+        var firstHit = new TaskCompletionSource();
+        var calls = 0;
+        _embedder
+            .Setup(e => e.EmbedDocumentAsync(id, It.IsAny<CancellationToken>()))
+            .Callback(() =>
+            {
+                Interlocked.Increment(ref calls);
+                firstHit.TrySetResult();
+            })
+            .ReturnsAsync(ProcessingOutcome.Transient);
+
+        // pollSeconds=1, backoff=5: without backoff an un-throttled loop would call many times in a
+        // few seconds; with backoff it should call roughly once per (1 + 5) ticks.
+        var sut = CreateSut(pollSeconds: 1, transientBackoffTicks: 5);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await sut.StartAsync(cts.Token);
+        await Task.WhenAny(firstHit.Task, Task.Delay(TimeSpan.FromSeconds(8), cts.Token));
+        await Task.Delay(TimeSpan.FromSeconds(4), cts.Token); // ~4 ticks of backoff window
+        await sut.StopAsync(CancellationToken.None);
+
+        calls.Should().BeGreaterThan(0, "the embedding pass must run at least once");
+        // Without backoff this would be ~4-5 calls in 4s at 1s/tick; with a 5-tick backoff it is far fewer.
+        calls.Should().BeLessThan(4, "the Transient backoff must prevent hot-looping a down embedder/Qdrant");
+    }
+
+    [Fact]
+    public async Task Tick_RunsGeneratingEmbeddingsStaleSweepEachTick_WithConfiguredThreshold()
+    {
+        var swept = new TaskCompletionSource();
+        _embedder
+            .Setup(e => e.RecoverStaleGeneratingEmbeddingsAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Callback<TimeSpan, CancellationToken>((threshold, _) =>
+            {
+                threshold.Should().Be(TimeSpan.FromMinutes(15)); // from StuckResetMinutes
+                swept.TrySetResult();
+            })
+            .ReturnsAsync(0);
+
+        await RunUntilAsync(CreateSut(stuckMinutes: 15), swept.Task);
+
+        _embedder.Verify(e => e.RecoverStaleGeneratingEmbeddingsAsync(
+            It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task Passes_RunInOrder_ExtractionThenClassificationThenEmbedding_EachTick()
+    {
+        // Fairness/ordering: pass 1 (extraction) -> pass 2 (classification) -> pass 3 (embedding)
+        // within a single tick. Record the relative order of the first call into each pass.
+        var qId = Guid.CreateVersion7();
+        var tId = Guid.CreateVersion7();
+        var cId = Guid.CreateVersion7();
+
+        _documents.Setup(r => r.GetNextQueuedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { qId });
+        _documents.Setup(r => r.GetNextTextExtractedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { tId });
+        _documents.Setup(r => r.GetNextClassifiedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { cId });
+
+        var order = new List<string>();
+        var allDone = new TaskCompletionSource();
+        _processor.Setup(p => p.ProcessAsync(qId, It.IsAny<CancellationToken>()))
+            .Callback(() => { lock (order) order.Add("extract"); })
+            .ReturnsAsync(ProcessingOutcome.Succeeded);
+        _classifier.Setup(c => c.ClassifyAsync(tId, It.IsAny<CancellationToken>()))
+            .Callback(() => { lock (order) order.Add("classify"); })
+            .ReturnsAsync(ProcessingOutcome.Succeeded);
+        _embedder.Setup(e => e.EmbedDocumentAsync(cId, It.IsAny<CancellationToken>()))
+            .Callback(() =>
+            {
+                lock (order)
+                {
+                    order.Add("embed");
+                    allDone.TrySetResult();
+                }
+            })
+            .ReturnsAsync(ProcessingOutcome.Succeeded);
+
+        await RunUntilAsync(CreateSut(), allDone.Task);
+
+        // The first three recorded calls must be in pipeline order.
+        order.Take(3).Should().Equal("extract", "classify", "embed");
     }
 }

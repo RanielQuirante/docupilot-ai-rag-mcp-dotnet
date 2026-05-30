@@ -54,6 +54,9 @@ const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   ClassificationStarted: 'Classification started',
   ClassificationSucceeded: 'Classification succeeded',
   ClassificationFailed: 'Classification failed',
+  EmbeddingStarted: 'Embedding started',
+  EmbeddingSucceeded: 'Embedding succeeded',
+  EmbeddingFailed: 'Embedding failed',
   ReprocessQueued: 'Re-queued for processing',
 };
 
@@ -114,13 +117,34 @@ export class DocumentDetailPage {
   protected readonly processMessage = signal<string | null>(null);
   protected readonly processIsError = signal<boolean>(false);
 
-  /** True while the document is still being worked (Queued / ExtractingText). */
+  /**
+   * True while the document is still being worked
+   * (Queued / ExtractingText / Classifying / GeneratingEmbeddings).
+   */
   protected readonly isNonTerminal = computed<boolean>(() => {
     const s = this.detail()?.status;
     return s != null && (NON_TERMINAL_STATUSES as readonly string[]).includes(s);
   });
 
   protected readonly isFailed = computed<boolean>(() => this.detail()?.status === 'Failed');
+
+  /** True once embeddings are generated and the document is searchable (Phase-5 success terminal). */
+  protected readonly isReadyForSearch = computed<boolean>(
+    () => this.detail()?.status === 'ReadyForSearch',
+  );
+
+  /**
+   * Human-readable "N chunks embedded" line, or null when there is nothing to
+   * show. Hidden for older docs with no `chunkCount` (null) and while the count
+   * is still 0 (embedding not done) — only meaningful once chunks exist.
+   */
+  protected readonly chunkCountLabel = computed<string | null>(() => {
+    const count = this.detail()?.chunkCount;
+    if (count == null || count <= 0) {
+      return null;
+    }
+    return `${count.toLocaleString()} ${count === 1 ? 'chunk' : 'chunks'} embedded`;
+  });
 
   /** True once classification has completed (the doc reached the `Classified` terminal). */
   protected readonly isClassified = computed<boolean>(() => this.detail()?.status === 'Classified');

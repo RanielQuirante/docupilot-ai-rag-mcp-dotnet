@@ -20,13 +20,21 @@ namespace DocuPilot.Worker;
 ///   <see cref="IClassificationService.ClassifyAsync"/> (claims atomically internally; calls the
 ///   LLM). A <see cref="ProcessingOutcome.Transient"/> (LLM down / model missing) leaves the doc
 ///   <c>TextExtracted</c> and triggers a short backoff so a down LLM is not spammed every tick.</item>
+///   <item><b>Pass 3 — embedding</b> (DA-040): selects the oldest <c>Classified</c> documents (FIFO)
+///   and, per document in its own DI scope, delegates to
+///   <see cref="IEmbeddingService.EmbedDocumentAsync"/> (claims atomically internally; chunks,
+///   embeds, writes Qdrant + SQL). A <see cref="ProcessingOutcome.Transient"/> (embedder/Qdrant
+///   down) leaves the doc <c>Classified</c> and triggers the SAME backoff so a down embedder/Qdrant
+///   is not spammed every tick.</item>
 /// </list>
 /// <para>
 /// <b>Fairness/ordering:</b> extraction (pass 1) drains BEFORE classification (pass 2) each tick.
 /// Extraction is fast (local I/O) so newly-uploaded docs reach <c>TextExtracted</c> promptly;
 /// classification is slow (CPU LLM, seconds–minutes per doc) so it proceeds at its own pace after.
-/// Neither starves because both passes run every tick, each capped at <see cref="MaxBatchPerTick"/>;
-/// pass 1 feeds pass 2's backlog, never blocks it (separate selection queries + separate scopes).
+/// Pass 3 (embedding) runs last for the same reason — classification feeds its <c>Classified</c>
+/// backlog. None starve because all three passes run every tick, each capped at
+/// <see cref="MaxBatchPerTick"/>; an earlier pass feeds the next pass's backlog, never blocks it
+/// (separate selection queries + separate scopes).
 /// </para>
 /// <para>
 /// The service is a singleton; <see cref="IDocumentProcessingService"/>,
@@ -64,6 +72,13 @@ public sealed class DocumentProcessingWorker : BackgroundService
     /// </summary>
     private int _classifyBackoffRemaining;
 
+    /// <summary>
+    /// Number of upcoming ticks to skip the embedding pass after a Transient outcome (embedder or
+    /// Qdrant down). Decremented each tick; pass 3 runs only when this reaches 0. Single-threaded
+    /// loop, so no synchronization needed. Mirrors <see cref="_classifyBackoffRemaining"/>.
+    /// </summary>
+    private int _embedBackoffRemaining;
+
     public DocumentProcessingWorker(
         IServiceScopeFactory scopeFactory,
         IOptions<WorkerOptions> options,
@@ -92,6 +107,7 @@ public sealed class DocumentProcessingWorker : BackgroundService
                 await RecoverStaleClaimsAsync(stoppingToken);
                 await DrainQueuedAsync(stoppingToken);
                 await DrainTextExtractedAsync(stoppingToken);
+                await DrainClassifiedAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -119,14 +135,16 @@ public sealed class DocumentProcessingWorker : BackgroundService
 
     /// <summary>
     /// Runs the generalized stale-claim sweep in its own scope; isolates failures from the drains.
-    /// Resets both stuck <c>ExtractingText</c> (→ <c>Queued</c>) and stuck <c>Classifying</c>
-    /// (→ <c>TextExtracted</c>) documents past the configured threshold.
+    /// Resets stuck <c>ExtractingText</c> (→ <c>Queued</c>), stuck <c>Classifying</c>
+    /// (→ <c>TextExtracted</c>) and stuck <c>GeneratingEmbeddings</c> (→ <c>Classified</c>)
+    /// documents past the configured threshold.
     /// </summary>
     private async Task RecoverStaleClaimsAsync(CancellationToken stoppingToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var processor = scope.ServiceProvider.GetRequiredService<IDocumentProcessingService>();
         var classifier = scope.ServiceProvider.GetRequiredService<IClassificationService>();
+        var embedder = scope.ServiceProvider.GetRequiredService<IEmbeddingService>();
 
         var resetExtracting = await processor.RecoverStaleClaimsAsync(_staleThreshold, stoppingToken);
         if (resetExtracting > 0)
@@ -140,6 +158,15 @@ public sealed class DocumentProcessingWorker : BackgroundService
         if (resetClassifying > 0)
         {
             _logger.LogInformation("Stale-claim sweep reset {Count} document(s) back to TextExtracted.", resetClassifying);
+        }
+
+        // Phase-5 (DA-040): generalize the sweep to the embedding stage — a doc stuck in
+        // GeneratingEmbeddings (worker crashed mid-embed/upsert) self-heals back to Classified for
+        // re-claim. Same audit-timestamp threshold, no ClaimedAt column.
+        var resetGenerating = await embedder.RecoverStaleGeneratingEmbeddingsAsync(_staleThreshold, stoppingToken);
+        if (resetGenerating > 0)
+        {
+            _logger.LogInformation("Stale-claim sweep reset {Count} document(s) back to Classified.", resetGenerating);
         }
     }
 
@@ -249,6 +276,74 @@ public sealed class DocumentProcessingWorker : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Pass 3 — embedding (DA-040). Selects the oldest <c>Classified</c> documents (FIFO) and embeds
+    /// each in its own DI scope via <see cref="IEmbeddingService.EmbedDocumentAsync"/>.
+    /// <para>
+    /// <b>Transient backoff:</b> mirrors pass 2 exactly. If a previous embed hit a
+    /// <see cref="ProcessingOutcome.Transient"/> (embedder unreachable / Qdrant down) we skip this
+    /// pass for <c>TransientBackoffTicks</c> ticks so a down dependency is not hammered every poll
+    /// interval — the docs stay <c>Classified</c> and are retried once the backoff elapses. The
+    /// extraction (pass 1) and classification (pass 2) passes keep running throughout. On the FIRST
+    /// Transient seen in a draining batch we set the backoff and STOP the batch (the dependency is
+    /// down for all of them — no point trying the rest this tick).
+    /// </para>
+    /// </summary>
+    private async Task DrainClassifiedAsync(CancellationToken stoppingToken)
+    {
+        if (_embedBackoffRemaining > 0)
+        {
+            _embedBackoffRemaining--;
+            _logger.LogDebug(
+                "Embedding pass backing off after a transient embedder/Qdrant fault; {Remaining} tick(s) remaining.",
+                _embedBackoffRemaining);
+            return;
+        }
+
+        IReadOnlyList<Guid> ids;
+        using (var selectionScope = _scopeFactory.CreateScope())
+        {
+            var documents = selectionScope.ServiceProvider
+                .GetRequiredService<DocuPilot.Repository.Abstractions.IDocumentRepository>();
+            ids = await documents.GetNextClassifiedIdsAsync(MaxBatchPerTick, stoppingToken);
+        }
+
+        foreach (var id in ids)
+        {
+            if (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            try
+            {
+                var outcome = await EmbedOneAsync(id, stoppingToken);
+                if (outcome == ProcessingOutcome.Transient)
+                {
+                    // The embedder/Qdrant is down: arm the backoff and abandon the rest of this
+                    // batch — they would all hit the same down dependency. Docs stay Classified.
+                    _embedBackoffRemaining = _transientBackoffTicks;
+                    _logger.LogWarning(
+                        "Embedding of document {DocumentId} was transient (embedder/Qdrant unreachable); " +
+                        "leaving it Classified and backing off the embedding pass for {Ticks} tick(s).",
+                        id, _transientBackoffTicks);
+                    break;
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw; // bubble up to the loop for a clean shutdown
+            }
+            catch (Exception ex)
+            {
+                // Isolation: an unexpected fault on one document logs and the loop continues.
+                // The orchestrator converts content faults into a Failed terminal, so reaching
+                // here means an infrastructure/transaction-level surprise.
+                _logger.LogError(ex, "Unexpected error embedding document {DocumentId}; skipping it.", id);
+            }
+        }
+    }
+
     /// <summary>Processes a single document inside its own scope (scoped DbContext/repos/orchestrator).</summary>
     private async Task ProcessOneAsync(Guid id, CancellationToken stoppingToken)
     {
@@ -301,6 +396,41 @@ public sealed class DocumentProcessingWorker : BackgroundService
                 // Another iteration/worker won the claim, or the row left TextExtracted between
                 // selection and claim. Expected and benign — just move on.
                 _logger.LogDebug("Document {DocumentId} was already claimed for classification; skipping.", id);
+                break;
+            case ProcessingOutcome.NotFound:
+                _logger.LogDebug("Document {DocumentId} no longer exists; skipping.", id);
+                break;
+        }
+
+        return outcome;
+    }
+
+    /// <summary>
+    /// Embeds a single document inside its own scope. Returns the outcome so the batch can arm the
+    /// Transient backoff. <c>Transient</c> is intentionally NOT a failure — the doc is left
+    /// <c>Classified</c> by the orchestrator and retried after the backoff (DA-039 contract / ADR §6).
+    /// </summary>
+    private async Task<ProcessingOutcome> EmbedOneAsync(Guid id, CancellationToken stoppingToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var embedder = scope.ServiceProvider.GetRequiredService<IEmbeddingService>();
+
+        var outcome = await embedder.EmbedDocumentAsync(id, stoppingToken);
+        switch (outcome)
+        {
+            case ProcessingOutcome.Succeeded:
+                _logger.LogInformation("Document {DocumentId} embedded: chunks + vectors persisted; ready for search.", id);
+                break;
+            case ProcessingOutcome.Failed:
+                _logger.LogWarning("Document {DocumentId} embedding failed (marked Failed with a reason).", id);
+                break;
+            case ProcessingOutcome.Transient:
+                // Handled by the caller (backoff); logged there with the backoff detail.
+                break;
+            case ProcessingOutcome.NotClaimed:
+                // Another iteration/worker won the claim, or the row left Classified between
+                // selection and claim. Expected and benign — just move on.
+                _logger.LogDebug("Document {DocumentId} was already claimed for embedding; skipping.", id);
                 break;
             case ProcessingOutcome.NotFound:
                 _logger.LogDebug("Document {DocumentId} no longer exists; skipping.", id);

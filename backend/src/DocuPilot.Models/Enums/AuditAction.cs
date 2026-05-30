@@ -30,4 +30,13 @@ public enum AuditAction
 
     /// <summary>Classification failed after retries on a content/parse fault (Classifying → Failed) (Phase 4).</summary>
     ClassificationFailed,
+
+    /// <summary>Worker successfully claimed the document for embedding (Classified → GeneratingEmbeddings) (Phase 5).</summary>
+    EmbeddingStarted,
+
+    /// <summary>Chunking + embedding + Qdrant upsert + chunk persist succeeded (GeneratingEmbeddings → ReadyForSearch) (Phase 5).</summary>
+    EmbeddingSucceeded,
+
+    /// <summary>Embedding failed on a content fault — no text to embed (GeneratingEmbeddings → Failed) (Phase 5).</summary>
+    EmbeddingFailed,
 }

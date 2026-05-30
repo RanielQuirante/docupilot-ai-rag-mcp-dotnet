@@ -24,6 +24,7 @@ public sealed class DocumentServiceTests
     private readonly Mock<IDocumentTextRepository> _textRepository = new();
     private readonly Mock<IDocumentClassificationRepository> _classificationRepository = new();
     private readonly Mock<IExtractedMetadataRepository> _metadataRepository = new();
+    private readonly Mock<IDocumentChunkRepository> _chunkRepository = new();
     private readonly Mock<IAuditRepository> _auditRepository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IFileStorage> _fileStorage = new();
@@ -52,6 +53,7 @@ public sealed class DocumentServiceTests
             _textRepository.Object,
             _classificationRepository.Object,
             _metadataRepository.Object,
+            _chunkRepository.Object,
             _auditRepository.Object,
             _unitOfWork.Object,
             _fileStorage.Object,

@@ -76,6 +76,30 @@ services:
       Llm__MaxAttempts: "${LLM_MAX_ATTEMPTS:-2}"
       Llm__MaxInputChars: "${LLM_MAX_INPUT_CHARS:-12000}"
       Llm__Temperature: "${LLM_TEMPERATURE:-0}"
+      # Phase-5 Chunking + Embedding + Qdrant config (DA-039/DA-043). FROZEN
+      # DA-039 contract keys. Wired to BOTH api + worker (env parity): the Worker
+      # runs the embed pass; the API surfaces chunk counts / config. Embedding
+      # BaseUrl = in-network ollama service + container port 11434 (NOT the host
+      # OLLAMA_PORT remap). Qdrant Host = in-network `qdrant` service; GrpcPort
+      # 6334 is the CONTAINER-internal gRPC port (NOT the host QDRANT_GRPC_PORT
+      # remap). The `document_chunks` collection is APP-bootstrapped on startup
+      # at Embedding__Dimensions (768) — NOT created by compose. Swapping the
+      # embedding model REQUIRES matching Embedding__Dimensions to the model's
+      # true dim on a FRESH Qdrant volume (the app dim-validate refuses a
+      # mismatch). Defaults via .env / compose (${VAR:-default}).
+      Chunking__MaxChars: "${CHUNKING_MAX_CHARS:-4000}"
+      Chunking__OverlapChars: "${CHUNKING_OVERLAP_CHARS:-600}"
+      Chunking__MaxChunksPerDocument: "${CHUNKING_MAX_CHUNKS_PER_DOCUMENT:-1000}"
+      Embedding__BaseUrl: "${EMBEDDING_BASE_URL:-http://ollama:11434}"
+      Embedding__Model: "${EMBEDDING_MODEL:-nomic-embed-text}"
+      Embedding__Dimensions: "${EMBEDDING_DIMENSIONS:-768}"
+      Embedding__ApiStyle: "${EMBEDDING_API_STYLE:-ollama-native}"
+      Embedding__TimeoutSeconds: "${EMBEDDING_TIMEOUT_SECONDS:-60}"
+      Embedding__MaxAttempts: "${EMBEDDING_MAX_ATTEMPTS:-3}"
+      Qdrant__Host: "${QDRANT_HOST:-qdrant}"
+      Qdrant__GrpcPort: "${QDRANT_GRPC_PORT_INTERNAL:-6334}"
+      Qdrant__CollectionName: "${QDRANT_COLLECTION_NAME:-document_chunks}"
+      Qdrant__UseTls: "${QDRANT_USE_TLS:-false}"
     volumes:
       - docupilot-files:/app/files
     depends_on:
@@ -84,7 +108,7 @@ services:
       sqlserver:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
       ollama:
         condition: service_healthy
       ollama-model-init:
@@ -122,6 +146,24 @@ services:
       Llm__MaxAttempts: "${LLM_MAX_ATTEMPTS:-2}"
       Llm__MaxInputChars: "${LLM_MAX_INPUT_CHARS:-12000}"
       Llm__Temperature: "${LLM_TEMPERATURE:-0}"
+      # Phase-5 Chunking + Embedding + Qdrant config (DA-039/DA-043). The Worker
+      # is the PRIMARY consumer (it runs pass-3: chunk -> embed -> Qdrant upsert
+      # -> SQL persist -> ReadyForSearch). Kept identical to the API for env
+      # parity. FROZEN DA-039 contract keys; same ${VAR:-default} pattern +
+      # in-network BaseUrl/Host (container-internal ports, NOT host remaps).
+      Chunking__MaxChars: "${CHUNKING_MAX_CHARS:-4000}"
+      Chunking__OverlapChars: "${CHUNKING_OVERLAP_CHARS:-600}"
+      Chunking__MaxChunksPerDocument: "${CHUNKING_MAX_CHUNKS_PER_DOCUMENT:-1000}"
+      Embedding__BaseUrl: "${EMBEDDING_BASE_URL:-http://ollama:11434}"
+      Embedding__Model: "${EMBEDDING_MODEL:-nomic-embed-text}"
+      Embedding__Dimensions: "${EMBEDDING_DIMENSIONS:-768}"
+      Embedding__ApiStyle: "${EMBEDDING_API_STYLE:-ollama-native}"
+      Embedding__TimeoutSeconds: "${EMBEDDING_TIMEOUT_SECONDS:-60}"
+      Embedding__MaxAttempts: "${EMBEDDING_MAX_ATTEMPTS:-3}"
+      Qdrant__Host: "${QDRANT_HOST:-qdrant}"
+      Qdrant__GrpcPort: "${QDRANT_GRPC_PORT_INTERNAL:-6334}"
+      Qdrant__CollectionName: "${QDRANT_COLLECTION_NAME:-document_chunks}"
+      Qdrant__UseTls: "${QDRANT_USE_TLS:-false}"
     volumes:
       - docupilot-files:/app/files
     depends_on:
@@ -130,7 +172,7 @@ services:
       sqlserver:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
       ollama:
         condition: service_healthy
       ollama-model-init:
@@ -170,6 +212,18 @@ services:
     restart: unless-stopped
 
   # ---- Qdrant vector database (HTTP 6333 + gRPC 6334) -----------------------
+  # Phase 5 (DA-043): Qdrant goes from present-but-unused -> live (the embed
+  # pass upserts vectors). api/worker now gate on `condition: service_healthy`
+  # so they never open a gRPC channel before Qdrant accepts connections.
+  # Probe choice: the qdrant/qdrant image is Debian (trixie) and ships NO
+  # curl/wget/python/nc — but it DOES ship `bash`, whose built-in /dev/tcp
+  # pseudo-device opens a TCP socket with no extra tooling. We send a minimal
+  # HTTP/1.1 GET to Qdrant's own readiness endpoint /readyz on the in-container
+  # HTTP port 6333 and assert a `200 OK` status line (mirrors the Ollama
+  # "probe with a tool the image actually contains" lesson). 6333 is the
+  # container-internal HTTP port — independent of the host QDRANT_HTTP_PORT
+  # remap. Even with this gate, the app's EnsureCollectionAsync keeps its own
+  # retry (defense-in-depth, like the SQL migrate-retry).
   qdrant:
     image: qdrant/qdrant:latest
     ports:
@@ -177,6 +231,17 @@ services:
       - "${QDRANT_GRPC_PORT:-6334}:6334"
     volumes:
       - qdrant-data:/qdrant/storage
+    healthcheck:
+      # MUST run under bash, not /bin/sh (dash) — /dev/tcp is a bash builtin.
+      test:
+        - "CMD"
+        - "bash"
+        - "-c"
+        - "exec 3<>/dev/tcp/127.0.0.1/6333; printf 'GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; grep -q '200 OK' <&3"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
 
   # ---- Ollama local LLM runtime (Phase 4: model auto-pulled by init below) --
@@ -210,15 +275,25 @@ services:
   # ("up to date") — it is only re-downloaded after `down -v` wipes the volume.
   # Uses the same ollama/ollama image (already cached) with OLLAMA_HOST pointed
   # at the ollama service, so the CLI talks to that server instead of starting
-  # its own. MANUAL fallback if this is skipped:
+  # its own.
+  # Phase 5 (DA-043): this one-shot now pulls BOTH models — the chat model
+  # (${LLM_MODEL}, ~2 GB) AND the embedding model (${EMBEDDING_MODEL}, default
+  # nomic-embed-text ~274 MB) — chained with `&&` so the init exits 0 only when
+  # both are present. The embedding model is needed before any live embed call;
+  # api/worker still gate on this single init via service_completed_successfully
+  # so NEITHER model is ever absent on a clean bring-up. Both persist in the
+  # shared ollama-models volume across up/down; re-pulled only after down -v.
+  # MANUAL fallback if this is skipped:
   #   docker compose exec ollama ollama pull llama3.2:3b
+  #   docker compose exec ollama ollama pull nomic-embed-text
   ollama-model-init:
     image: ollama/ollama:latest
     entrypoint: ["/bin/sh", "-c"]
-    command: ["ollama pull \"$${LLM_MODEL:-llama3.2:3b}\""]
+    command: ["ollama pull \"$${LLM_MODEL:-llama3.2:3b}\" && ollama pull \"$${EMBEDDING_MODEL:-nomic-embed-text}\""]
     environment:
       OLLAMA_HOST: "http://ollama:11434"
       LLM_MODEL: "${LLM_MODEL:-llama3.2:3b}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-nomic-embed-text}"
     depends_on:
       ollama:
         condition: service_healthy

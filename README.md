@@ -227,6 +227,59 @@ The full LLM configuration (`Llm__BaseUrl`, `Llm__Model`, `Llm__ApiStyle`,
 `Llm__Temperature`) is wired to both the API and Worker and is overridable via
 the `LLM_*` variables documented in `.env.example`.
 
+**Embeddings & Qdrant (Phase 5 — second auto-pulled model + vector search).**
+Phase 5 chunks each classified document, embeds the chunks with a **second**
+Ollama model, and stores the vectors in **Qdrant** for semantic search.
+
+- **Second model auto-pull.** The same one-shot `ollama-model-init` service now
+  pulls **both** models into the `ollama-models` volume before api/worker start:
+  the chat model `${LLM_MODEL}` (default `llama3.2:3b`, ~2 GB) **and** the
+  embedding model `${EMBEDDING_MODEL}` (default **`nomic-embed-text`**, ~274 MB).
+  It runs `ollama pull llama3.2:3b && ollama pull nomic-embed-text`, so api/worker
+  (gated on `service_completed_successfully`) never start with either model
+  absent. Both persist across `down`/`up` and are re-pulled only after `down -v`.
+
+  ```bash
+  docker compose exec ollama ollama list      # should list BOTH llama3.2:3b and nomic-embed-text
+  # manual fallback if init was skipped:
+  docker compose exec ollama ollama pull nomic-embed-text
+  ```
+
+- **Qdrant readiness.** `qdrant` now has a **healthcheck** (it previously had
+  none) and `docupilot-api`/`docupilot-worker` gate on
+  `depends_on: qdrant: condition: service_healthy`. The `qdrant/qdrant` image
+  ships no `curl`/`wget`, so the probe uses **bash's `/dev/tcp`** built-in to
+  send an HTTP `GET /readyz` to Qdrant's own readiness endpoint on the
+  in-container port `6333` and asserts a `200 OK`. Check it from the host:
+
+  ```bash
+  curl http://localhost:6333/readyz      # -> "all shards are ready" / HTTP 200
+  docker compose ps                       # qdrant shows (healthy)
+  ```
+
+- **The `document_chunks` collection is created by the APP on startup**
+  (at `Embedding__Dimensions`), **not** by compose — nothing in the stack
+  pre-creates it, and a startup bootstrap validates an existing collection's
+  size against the configured dimension.
+
+- **Dimension-match rule (important when swapping the embedding model).**
+  `Embedding__Dimensions` MUST equal the embedding model's true output dimension
+  (`nomic-embed-text` = **768**). If you change `EMBEDDING_MODEL` (e.g.
+  `all-minilm` = 384, `mxbai-embed-large` = 1024) you **must** set
+  `EMBEDDING_DIMENSIONS` to the new model's dim **and** start on a fresh Qdrant
+  volume (`docker compose down -v`) so the collection re-bootstraps at the new
+  size. The app's dim-validate **refuses** a collection whose size mismatches the
+  configured dimension (this guards the silent-break trap where a mismatch would
+  quietly break upserts and search).
+
+The full Phase-5 configuration (`Chunking__MaxChars`, `Chunking__OverlapChars`,
+`Chunking__MaxChunksPerDocument`, `Embedding__BaseUrl`, `Embedding__Model`,
+`Embedding__Dimensions`, `Embedding__ApiStyle`, `Embedding__TimeoutSeconds`,
+`Embedding__MaxAttempts`, `Qdrant__Host`, `Qdrant__GrpcPort`,
+`Qdrant__CollectionName`, `Qdrant__UseTls`) is wired to both the API and Worker
+and is overridable via the `CHUNKING_*` / `EMBEDDING_*` / `QDRANT_*` variables
+documented in `.env.example`.
+
 **First `docker compose up --build` looks hung.**
 It is almost certainly pulling base images (SQL Server and Ollama are the big ones). Run `docker compose logs -f` or watch Docker Desktop to confirm download progress. The pull is a one-time cost.
 

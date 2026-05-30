@@ -1,3 +1,4 @@
+using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -30,6 +31,16 @@ public static class DependencyInjection
         // host (DA-033) resolves the SAME registration — keep it in this shared extension so the
         // two composition roots can't drift (lessons.md DA-021).
         services.AddScoped<IClassificationService, ClassificationService>();
+
+        // Phase 5: the chunker — pure, deterministic, dependency-free CPU string logic. Lives in
+        // Services (not Infrastructure, ADR §1). Stateless → singleton.
+        services.AddSingleton<IChunkingService, RecursiveCharacterChunker>();
+
+        // Phase 5: the reusable embedding orchestrator (claim Classified → GeneratingEmbeddings,
+        // chunk, embed-all, Qdrant-first, transactional SQL+status persist + audit). The Worker host
+        // (DA-040) resolves the SAME registration — keep it in this shared extension so the two
+        // composition roots can't drift (lessons.md DA-021).
+        services.AddScoped<IEmbeddingService, EmbeddingService>();
 
         return services;
     }

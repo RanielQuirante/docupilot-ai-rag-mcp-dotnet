@@ -66,6 +66,21 @@ public sealed class DocumentRepository : IDocumentRepository
         return affected == 1;
     }
 
+    public async Task<bool> TryClaimForEmbeddingAsync(Guid id, CancellationToken ct)
+    {
+        // Single-statement compare-and-swap: only flips Classified → GeneratingEmbeddings. The
+        // WHERE Status = Classified guard is the optimistic concurrency check — if another worker
+        // already claimed it, affected rows is 0 and we return false. Backed by IX_Documents_Status
+        // (DA-038 §P5.4 — no new index). Phase-5 pass-3 claim (ADR §5).
+        var affected = await _dbContext.Set<Document>()
+            .Where(d => d.Id == id && d.Status == DocumentStatus.Classified)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(d => d.Status, DocumentStatus.GeneratingEmbeddings),
+                ct);
+
+        return affected == 1;
+    }
+
     public async Task SaveChangesAsync(CancellationToken ct)
     {
         await _dbContext.SaveChangesAsync(ct);
@@ -142,6 +157,45 @@ public sealed class DocumentRepository : IDocumentRepository
         return await _dbContext.Set<Document>()
             .AsNoTracking()
             .Where(d => d.Status == DocumentStatus.Classifying)
+            .Where(d => !auditLogs.Any(a =>
+                a.EntityId == d.Id
+                && a.Action == startedAction
+                && a.CreatedAt >= cutoffUtc))
+            .Select(d => d.Id)
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetNextClassifiedIdsAsync(int max, CancellationToken ct)
+    {
+        if (max <= 0)
+        {
+            return [];
+        }
+
+        // FIFO fairness: oldest Classified first (UploadedAt ASC), backed by IX_Documents_Status.
+        // No-tracking projection of just the id — the claim itself is the atomic
+        // TryClaimForEmbeddingAsync done inside EmbedDocumentAsync. Phase-5 pass-3 (DA-040).
+        return await _dbContext.Set<Document>()
+            .AsNoTracking()
+            .Where(d => d.Status == DocumentStatus.Classified)
+            .OrderBy(d => d.UploadedAt)
+            .Take(max)
+            .Select(d => d.Id)
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetStaleGeneratingEmbeddingsIdsAsync(DateTime cutoffUtc, CancellationToken ct)
+    {
+        // Documents stuck in GeneratingEmbeddings whose latest EmbeddingStarted audit is older than
+        // the cutoff (audit-timestamp approach, no ClaimedAt column — mirrors GetStaleClassifyingIdsAsync
+        // for the Phase-5 stage). Provider-agnostic LINQ → SQL.
+        const string startedAction = nameof(AuditAction.EmbeddingStarted);
+
+        var auditLogs = _dbContext.Set<AuditLog>().AsNoTracking();
+
+        return await _dbContext.Set<Document>()
+            .AsNoTracking()
+            .Where(d => d.Status == DocumentStatus.GeneratingEmbeddings)
             .Where(d => !auditLogs.Any(a =>
                 a.EntityId == d.Id
                 && a.Action == startedAction

@@ -24,6 +24,7 @@ namespace DocuPilot.Models.Contracts;
 /// <param name="ExtractedAt">Extraction timestamp (UTC); null until text is extracted.</param>
 /// <param name="Classification">The LLM classification (category + confidence + reason); null until classified.</param>
 /// <param name="Metadata">The parsed extracted-metadata JSON object; null until classified (an empty extraction is the object <c>{}</c>).</param>
+/// <param name="ChunkCount">Number of embedded chunks persisted for the document (Phase 5, DA-039); null/0 until the document reaches <c>ReadyForSearch</c>.</param>
 public sealed record DocumentDetail(
     Guid Id,
     string FileName,
@@ -36,4 +37,5 @@ public sealed record DocumentDetail(
     int? CharCount,
     DateTime? ExtractedAt,
     DocumentClassificationDto? Classification,
-    JsonElement? Metadata);
+    JsonElement? Metadata,
+    int? ChunkCount = null);
