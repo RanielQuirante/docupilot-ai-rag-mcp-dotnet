@@ -29,4 +29,13 @@ public interface IDocumentChunkRepository
 
     /// <summary>Counts the chunk rows for a document (no-tracking). Backs the detail DTO's <c>ChunkCount</c> (DA-039 §g).</summary>
     Task<int> CountByDocumentIdAsync(Guid documentId, CancellationToken ct);
+
+    /// <summary>
+    /// Batch-loads chunk rows by a set of chunk ids (no-tracking) — the read-only hydration seam for
+    /// Phase-6 semantic search (DA-045). A single <c>WHERE Id IN (@chunkIds)</c> primary-key seek (no
+    /// N+1), used to resolve the authoritative <c>Content</c> of each winning chunk for
+    /// <c>matchedText</c>. The <c>chunkId</c> set comes from the Qdrant hits (<c>ChunkHit.ChunkId</c>
+    /// = <c>DocumentChunks.Id</c>). Additive over the Phase-5 frozen repo surface.
+    /// </summary>
+    Task<IReadOnlyList<DocumentChunk>> GetByIdsAsync(IReadOnlyCollection<Guid> chunkIds, CancellationToken ct);
 }
