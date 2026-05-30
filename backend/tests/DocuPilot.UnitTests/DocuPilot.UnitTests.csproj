@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DocuPilot.Services\DocuPilot.Services.csproj" />
     <ProjectReference Include="..\..\src\DocuPilot.Models\DocuPilot.Models.csproj" />
+    <ProjectReference Include="..\..\src\DocuPilot.Repository\DocuPilot.Repository.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,3 +1,5 @@
+using DocuPilot.Repository.Abstractions;
+using DocuPilot.Repository.Documents;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DocuPilot.Repository;
@@ -17,8 +19,10 @@ public static class DependencyInjection
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
     public static IServiceCollection AddRepositories(this IServiceCollection services)
     {
-        // No registrations in Phase 1.5. Repository interfaces (Abstractions/) and their
-        // implementations (Documents/, Workflows/, Audit/) are wired here in Phase 2+.
+        // Phase 2: the Documents data-access seam. The repository depends on the base
+        // EF DbContext (registered by Infrastructure as the concrete DocuPilotDbContext),
+        // which keeps this project provider-agnostic (DA-011 §2.3/§2.7).
+        services.AddScoped<IDocumentRepository, DocumentRepository>();
         return services;
     }
 }

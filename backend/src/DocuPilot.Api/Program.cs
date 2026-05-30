@@ -1,5 +1,7 @@
 using DocuPilot.Services;
 using DocuPilot.Infrastructure;
+using DocuPilot.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http.Features;
 using Serilog;
 
 // Bootstrap logger — used until the host's Serilog config takes over. Anything
@@ -37,10 +39,17 @@ try
 
     // Compose services + infrastructure layers (stubs in Phase 1.5).
     builder.Services.AddServices();
+    // TimeProvider.System is registered inside AddInfrastructure (it travels with its
+    // consumers, e.g. LocalFileStorage) so the Api and Worker hosts can't drift (DA-021).
     builder.Services.AddInfrastructure(builder.Configuration);
 
-    // System clock for testable timestamp generation in HealthController.
-    builder.Services.AddSingleton(TimeProvider.System);
+    // Raise the multipart body length limit to match the per-file upload cap (25 MB).
+    // Keep it aligned with FileStorage:MaxBytes and the [RequestSizeLimit] on the upload action.
+    var maxUploadBytes = builder.Configuration.GetValue<long?>("FileStorage:MaxBytes") ?? 26_214_400L;
+    builder.Services.Configure<FormOptions>(options =>
+    {
+        options.MultipartBodyLengthLimit = maxUploadBytes;
+    });
 
     builder.Services.AddControllers();
 
@@ -57,6 +66,12 @@ try
     });
 
     var app = builder.Build();
+
+    // Apply EF Core migrations on startup with a retry/wait loop. A fresh-volume SQL
+    // Server needs ~30–60 s before it accepts connections and `depends_on` does NOT wait
+    // for readiness, so this app-side retry is mandatory to avoid a crash-loop on first
+    // boot (DA-015 §6, constraint #10). POC-only — production gates migrations separately.
+    await DatabaseMigrator.MigrateAsync(app.Services);
 
     // Structured request logging — one line per request, includes status + elapsed.
     app.UseSerilogRequestLogging();

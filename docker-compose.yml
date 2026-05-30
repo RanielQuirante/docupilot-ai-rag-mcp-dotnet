@@ -18,13 +18,30 @@
 # already runs SQL Server natively on 1433 (etc.) can remap without editing
 # this file. See .env.example for the full variable list.
 #
-# Phase 1 scope note: no `healthcheck:` blocks — `depends_on:` only controls
-# start ORDER, not readiness. SQL Server takes ~30-60s to accept connections
-# on first boot; the API does not yet open a DB connection at startup so this
-# is acceptable for the foundation. Proper healthchecks land in a later phase.
+# Phase 2 (DA-019): the API now opens a DB connection at startup to apply the
+# Documents migration. A `healthcheck:` on `sqlserver` + `depends_on:
+# condition: service_healthy` makes the api/worker wait until SQL accepts
+# connections (SQL Server needs ~30-60s on a fresh volume). This REDUCES — but
+# does not replace — the app-side migrate-retry loop (DA-016); both layers stay.
+# A new `docupilot-files` named volume holds uploaded files (mounted on both
+# api (writer) and worker (future Phase-3 reader)).
 # =============================================================================
 
 services:
+  # ---- One-shot: make the docupilot-files volume writable by the app user ----
+  # The named volume is created root-owned (0755). The API/Worker run as the
+  # non-root user baked into the .NET aspnet/runtime images (UID 1654 = `app`),
+  # so they cannot create the date-partition subdirs under /app/files and the
+  # upload fails with "Permission denied". This tiny init container chowns the
+  # volume root to 1654 ONCE, then exits; api/worker wait for it to complete.
+  # Pure config fix — no app/Dockerfile change.
+  docupilot-files-init:
+    image: busybox:1.37
+    command: ["sh", "-c", "chown -R 1654:1654 /app/files && chmod 0775 /app/files"]
+    volumes:
+      - docupilot-files:/app/files
+    restart: "no"
+
   # ---- .NET 10 Web API (composition root, /health, Swagger) -----------------
   docupilot-api:
     build:
@@ -35,10 +52,23 @@ services:
       - "${API_PORT:-5010}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      # In-network DB connection: SQL host = service name `sqlserver`, port 1433
+      # (the container-internal port — NOT the host `SQL_PORT`/14330 remap).
+      ConnectionStrings__DocuPilotDb: "Server=sqlserver,1433;Database=DocuPilot;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True"
+      # File storage: root path points at the docupilot-files volume below.
+      FileStorage__RootPath: /app/files
+      FileStorage__MaxBytes: "26214400"
+    volumes:
+      - docupilot-files:/app/files
     depends_on:
-      - sqlserver
-      - qdrant
-      - ollama
+      docupilot-files-init:
+        condition: service_completed_successfully
+      sqlserver:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
     restart: unless-stopped
 
   # ---- .NET 10 background worker (document pipeline host; no HTTP) -----------
@@ -49,10 +79,22 @@ services:
     image: docupilot-worker:dev
     environment:
       DOTNET_ENVIRONMENT: Development
+      # Worker shares the same DB + file-storage config (Phase-3 reader of the
+      # docupilot-files volume; harmless to wire now and keeps env parity).
+      ConnectionStrings__DocuPilotDb: "Server=sqlserver,1433;Database=DocuPilot;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True"
+      FileStorage__RootPath: /app/files
+      FileStorage__MaxBytes: "26214400"
+    volumes:
+      - docupilot-files:/app/files
     depends_on:
-      - sqlserver
-      - qdrant
-      - ollama
+      docupilot-files-init:
+        condition: service_completed_successfully
+      sqlserver:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
     restart: unless-stopped
 
   # ---- Angular 21 SPA served by NGINX (also reverse-proxies /api/*) ---------
@@ -76,6 +118,15 @@ services:
       - "${SQL_PORT:-1433}:1433"
     volumes:
       - sqlserver-data:/var/opt/mssql
+    healthcheck:
+      # sqlcmd ships at /opt/mssql-tools18/bin in the 2022-latest image; -No
+      # disables encryption negotiation (paired with -C trust) for the dev cert.
+      # Probes 1433 (container-internal) — independent of the host SQL_PORT remap.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -No -Q \"SELECT 1\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
 
   # ---- Qdrant vector database (HTTP 6333 + gRPC 6334) -----------------------
@@ -102,3 +153,4 @@ volumes:
   sqlserver-data:
   qdrant-data:
   ollama-models:
+  docupilot-files:   # uploaded document files (shared by api + worker)
