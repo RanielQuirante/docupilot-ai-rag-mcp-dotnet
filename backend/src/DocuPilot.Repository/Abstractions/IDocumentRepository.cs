@@ -38,6 +38,15 @@ public interface IDocumentRepository
     /// </summary>
     Task<bool> TryClaimAsync(Guid id, CancellationToken ct);
 
+    /// <summary>
+    /// Atomically claims a <c>TextExtracted</c> document for classification, transitioning it to
+    /// <c>Classifying</c> via a single guarded <c>ExecuteUpdateAsync</c>
+    /// (<c>WHERE Id = @id AND Status = TextExtracted</c>). Returns <c>true</c> if this call won the
+    /// claim (affected rows = 1), <c>false</c> if another worker/iteration already claimed it.
+    /// Phase-4 pass-2 claim (ADR §2) — the compare-and-swap analogue of <see cref="TryClaimAsync"/>.
+    /// </summary>
+    Task<bool> TryClaimForClassificationAsync(Guid id, CancellationToken ct);
+
     /// <summary>Persists pending changes on the tracked document(s). Used after mutating a tracked entity.</summary>
     Task SaveChangesAsync(CancellationToken ct);
 
@@ -50,6 +59,15 @@ public interface IDocumentRepository
     Task<IReadOnlyList<Guid>> GetNextQueuedIdsAsync(int max, CancellationToken ct);
 
     /// <summary>
+    /// Returns the ids of the oldest <c>TextExtracted</c> documents (FIFO by <c>UploadedAt ASC</c>),
+    /// up to <paramref name="max"/>. Phase-4 pass-2 selection (DA-033) — the read-only/no-tracking
+    /// analogue of <see cref="GetNextQueuedIdsAsync"/>; the actual claim is the atomic
+    /// <see cref="TryClaimForClassificationAsync"/> done inside <c>ClassifyAsync</c> on each id.
+    /// Backed by <c>IX_Documents_Status</c>.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetNextTextExtractedIdsAsync(int max, CancellationToken ct);
+
+    /// <summary>
     /// Stale-claim recovery (DA-024 §, PM Q4 — audit-timestamp, no <c>ClaimedAt</c> column):
     /// returns the ids of documents stuck in <c>ExtractingText</c> whose most-recent
     /// <c>ExtractionStarted</c> audit row is OLDER than <paramref name="cutoffUtc"/> (i.e. a
@@ -58,6 +76,15 @@ public interface IDocumentRepository
     /// <c>IX_Documents_Status</c> + <c>IX_AuditLogs_EntityId_CreatedAt</c>.
     /// </summary>
     Task<IReadOnlyList<Guid>> GetStaleExtractingIdsAsync(DateTime cutoffUtc, CancellationToken ct);
+
+    /// <summary>
+    /// Phase-4 stale-claim recovery (generalizes <see cref="GetStaleExtractingIdsAsync"/> for the
+    /// classification stage): returns the ids of documents stuck in <c>Classifying</c> whose
+    /// most-recent <c>ClassificationStarted</c> audit row is OLDER than <paramref name="cutoffUtc"/>
+    /// (a crash/host-cancellation left them claimed). The caller resets each to <c>TextExtracted</c>.
+    /// Read-only / no-tracking; backed by <c>IX_Documents_Status</c> + <c>IX_AuditLogs_EntityId_CreatedAt</c>.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetStaleClassifyingIdsAsync(DateTime cutoffUtc, CancellationToken ct);
 
     /// <summary>
     /// Returns one page of documents ordered by <c>UploadedAt DESC</c> (newest first,

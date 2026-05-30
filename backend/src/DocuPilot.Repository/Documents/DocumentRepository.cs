@@ -51,6 +51,21 @@ public sealed class DocumentRepository : IDocumentRepository
         return affected == 1;
     }
 
+    public async Task<bool> TryClaimForClassificationAsync(Guid id, CancellationToken ct)
+    {
+        // Single-statement compare-and-swap: only flips TextExtracted → Classifying. The
+        // WHERE Status = TextExtracted guard is the optimistic concurrency check — if another
+        // worker already claimed it, affected rows is 0 and we return false. Backed by
+        // IX_Documents_Status (DA-031 §P4.4 — no new index).
+        var affected = await _dbContext.Set<Document>()
+            .Where(d => d.Id == id && d.Status == DocumentStatus.TextExtracted)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(d => d.Status, DocumentStatus.Classifying),
+                ct);
+
+        return affected == 1;
+    }
+
     public async Task SaveChangesAsync(CancellationToken ct)
     {
         await _dbContext.SaveChangesAsync(ct);
@@ -74,6 +89,25 @@ public sealed class DocumentRepository : IDocumentRepository
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetNextTextExtractedIdsAsync(int max, CancellationToken ct)
+    {
+        if (max <= 0)
+        {
+            return [];
+        }
+
+        // FIFO fairness: oldest TextExtracted first (UploadedAt ASC), backed by IX_Documents_Status.
+        // No-tracking projection of just the id — the claim itself is the atomic
+        // TryClaimForClassificationAsync done inside ClassifyAsync. Phase-4 pass-2 (DA-033).
+        return await _dbContext.Set<Document>()
+            .AsNoTracking()
+            .Where(d => d.Status == DocumentStatus.TextExtracted)
+            .OrderBy(d => d.UploadedAt)
+            .Take(max)
+            .Select(d => d.Id)
+            .ToListAsync(ct);
+    }
+
     public async Task<IReadOnlyList<Guid>> GetStaleExtractingIdsAsync(DateTime cutoffUtc, CancellationToken ct)
     {
         // Documents stuck in ExtractingText whose latest ExtractionStarted audit is older than
@@ -88,6 +122,26 @@ public sealed class DocumentRepository : IDocumentRepository
         return await _dbContext.Set<Document>()
             .AsNoTracking()
             .Where(d => d.Status == DocumentStatus.ExtractingText)
+            .Where(d => !auditLogs.Any(a =>
+                a.EntityId == d.Id
+                && a.Action == startedAction
+                && a.CreatedAt >= cutoffUtc))
+            .Select(d => d.Id)
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetStaleClassifyingIdsAsync(DateTime cutoffUtc, CancellationToken ct)
+    {
+        // Documents stuck in Classifying whose latest ClassificationStarted audit is older than the
+        // cutoff (audit-timestamp approach, no ClaimedAt column — mirrors GetStaleExtractingIdsAsync
+        // for the Phase-4 stage). Provider-agnostic LINQ → SQL.
+        const string startedAction = nameof(AuditAction.ClassificationStarted);
+
+        var auditLogs = _dbContext.Set<AuditLog>().AsNoTracking();
+
+        return await _dbContext.Set<Document>()
+            .AsNoTracking()
+            .Where(d => d.Status == DocumentStatus.Classifying)
             .Where(d => !auditLogs.Any(a =>
                 a.EntityId == d.Id
                 && a.Action == startedAction

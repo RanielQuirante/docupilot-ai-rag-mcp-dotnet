@@ -16,6 +16,15 @@ public enum ProcessingOutcome
 
     /// <summary>The document id does not exist.</summary>
     NotFound,
+
+    /// <summary>
+    /// A transient, retryable-later fault (Phase 4: the LLM was unreachable / the model was not
+    /// loaded). The document is LEFT in its pre-claim state (e.g. <c>TextExtracted</c>) — NOT
+    /// <c>Failed</c> — so a temporarily-down dependency does not poison the backlog; the Worker
+    /// (DA-033) retries it on a later tick (ADR §6 / PM Q3). Never returned by Phase-3
+    /// <see cref="IDocumentProcessingService.ProcessAsync"/>.
+    /// </summary>
+    Transient,
 }
 
 /// <summary>

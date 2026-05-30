@@ -32,6 +32,11 @@ public static class DependencyInjection
         services.AddScoped<IAuditRepository, AuditRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
+        // Phase 4 data-access seams: classification + extracted-metadata, both
+        // upsert-by-DocumentId (1:1, idempotent — DA-031 §P4.2.2/§P4.3.2).
+        services.AddScoped<IDocumentClassificationRepository, DocumentClassificationRepository>();
+        services.AddScoped<IExtractedMetadataRepository, ExtractedMetadataRepository>();
+
         return services;
     }
 }

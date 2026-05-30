@@ -113,8 +113,9 @@ public sealed class DocumentProcessingService : IDocumentProcessingService
             return RequeueResult.NotFound;
         }
 
-        // Already in-flight — cannot re-queue (409).
-        if (document.Status is DocumentStatus.Queued or DocumentStatus.ExtractingText)
+        // Already in-flight — cannot re-queue (409). Includes the Phase-4 in-progress claim
+        // (Classifying) so a re-process can't race an active classification.
+        if (document.Status is DocumentStatus.Queued or DocumentStatus.ExtractingText or DocumentStatus.Classifying)
         {
             return RequeueResult.Conflict;
         }

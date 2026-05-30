@@ -23,6 +23,9 @@ public enum DocumentStatus
     /// <summary>Document classification in progress (Phase 4+).</summary>
     Classifying,
 
+    /// <summary>Classification + metadata extraction succeeded and persisted — Phase-4 terminal success; the hand-off marker Phase 5 claims on (Phase 4+).</summary>
+    Classified,
+
     /// <summary>Embedding generation in progress (Phase 5+).</summary>
     GeneratingEmbeddings,
 

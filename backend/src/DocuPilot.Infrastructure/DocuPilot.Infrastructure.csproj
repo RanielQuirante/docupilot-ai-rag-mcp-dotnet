@@ -8,8 +8,16 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="PdfPig" />
     <PackageReference Include="DocumentFormat.OpenXml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Editable prompt library (spec §13.1/§13.2), embedded so it ships with the assembly
+         and is loaded by PromptProvider. -->
+    <EmbeddedResource Include="Llm\Prompts\ClassificationPrompt.txt" />
+    <EmbeddedResource Include="Llm\Prompts\MetadataPrompt.txt" />
   </ItemGroup>
 
   <ItemGroup>

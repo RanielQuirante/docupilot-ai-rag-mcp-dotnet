@@ -21,4 +21,13 @@ public enum AuditAction
 
     /// <summary>Document re-queued for processing via the manual /process trigger or a stale-claim reset.</summary>
     ReprocessQueued,
+
+    /// <summary>Worker successfully claimed the document for classification (TextExtracted → Classifying) (Phase 4).</summary>
+    ClassificationStarted,
+
+    /// <summary>Classification + metadata extraction succeeded and was persisted (Classifying → Classified) (Phase 4).</summary>
+    ClassificationSucceeded,
+
+    /// <summary>Classification failed after retries on a content/parse fault (Classifying → Failed) (Phase 4).</summary>
+    ClassificationFailed,
 }

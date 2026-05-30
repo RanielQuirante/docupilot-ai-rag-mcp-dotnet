@@ -21,11 +21,31 @@ const STATUS_BADGE_CLASSES: Readonly<Record<string, string>> = {
   ExtractingText: 'bg-amber-100 text-amber-800 ring-amber-600/20',
   TextExtracted: 'bg-emerald-100 text-emerald-800 ring-emerald-600/20',
   Classifying: 'bg-amber-100 text-amber-800 ring-amber-600/20',
+  Classified: 'bg-emerald-100 text-emerald-800 ring-emerald-600/20',
   GeneratingEmbeddings: 'bg-amber-100 text-amber-800 ring-amber-600/20',
   ReadyForSearch: 'bg-emerald-100 text-emerald-800 ring-emerald-600/20',
   Failed: 'bg-red-100 text-red-800 ring-red-600/20',
 };
 const STATUS_BADGE_FALLBACK = 'bg-slate-100 text-slate-700 ring-slate-500/20';
+
+/**
+ * Full literal Tailwind class strings per category chip (DA-035). Keyed by the
+ * spec §5.3 display strings the backend list DTO emits (DA-032). Strings are
+ * literal so Tailwind Oxide can statically see every utility (DA-011 §6.6 —
+ * no runtime concatenation). A category not in the map (incl. `Unknown` and
+ * any future server value) falls back to a neutral slate chip.
+ */
+const CATEGORY_CHIP_CLASSES: Readonly<Record<string, string>> = {
+  Contract: 'bg-indigo-100 text-indigo-800 ring-indigo-600/20',
+  Invoice: 'bg-emerald-100 text-emerald-800 ring-emerald-600/20',
+  'Employee Record': 'bg-sky-100 text-sky-800 ring-sky-600/20',
+  'Legal Document': 'bg-purple-100 text-purple-800 ring-purple-600/20',
+  'Compliance Document': 'bg-rose-100 text-rose-800 ring-rose-600/20',
+  'Client Correspondence': 'bg-teal-100 text-teal-800 ring-teal-600/20',
+  'Policy Document': 'bg-amber-100 text-amber-800 ring-amber-600/20',
+  Unknown: 'bg-slate-100 text-slate-600 ring-slate-500/20',
+};
+const CATEGORY_CHIP_FALLBACK = 'bg-slate-100 text-slate-600 ring-slate-500/20';
 
 const PAGE_SIZE = 20;
 
@@ -261,5 +281,10 @@ export class DocumentLibraryPage {
   /** Whether a row exposes the Re-process action (Failed = re-runnable). */
   protected canReprocess(doc: DocumentListItem): boolean {
     return doc.status === 'Failed';
+  }
+
+  /** Full literal Tailwind chip classes for a given category string (DA-035). */
+  protected categoryChipClass(category: string): string {
+    return CATEGORY_CHIP_CLASSES[category] ?? CATEGORY_CHIP_FALLBACK;
   }
 }

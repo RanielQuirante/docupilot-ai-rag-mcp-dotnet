@@ -161,6 +161,107 @@
       </div>
     </dl>
 
+    <!-- ====== Classification ====== -->
+    <section class="mt-6 rounded-xl border border-slate-200 bg-white p-6">
+      <h3 class="text-sm font-semibold text-slate-900">Classification</h3>
+
+      @if (d.classification; as c) {
+        <!-- Classified: real LLM result -->
+        <div class="mt-4 flex flex-wrap items-center gap-3">
+          <span
+            class="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset"
+            [class]="categoryBadgeClass(c.category)"
+          >
+            {{ c.category }}
+          </span>
+          <span class="text-xs text-slate-400">
+            Model: <span class="font-medium text-slate-600">{{ c.model }}</span>
+          </span>
+        </div>
+
+        <!-- Confidence indicator (percent + bar) -->
+        <div class="mt-4 max-w-md">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-semibold tracking-wide text-slate-500 uppercase">Confidence</span>
+            <span class="font-medium text-slate-700 tabular-nums">
+              {{ confidencePercent(c.confidence) }}%
+            </span>
+          </div>
+          <div
+            class="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100"
+            role="progressbar"
+            aria-label="Classification confidence"
+            [attr.aria-valuenow]="confidencePercent(c.confidence)"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <div
+              class="h-full rounded-full bg-indigo-500 transition-[width] duration-300"
+              [style.width.%]="confidencePercent(c.confidence)"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Reason / rationale -->
+        @if (c.reason) {
+          <div class="mt-4">
+            <p class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Reason</p>
+            <p class="mt-1 text-sm leading-relaxed text-slate-700">{{ c.reason }}</p>
+          </div>
+        }
+      } @else if (isClassifying()) {
+        <!-- Classification in progress -->
+        <div class="mt-3 flex items-center gap-3 text-sm text-slate-500" role="status">
+          <span
+            class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"
+            aria-hidden="true"
+          ></span>
+          Classifying this document…
+        </div>
+      } @else if (isFailed()) {
+        <p class="mt-3 text-sm text-slate-500">
+          This document was not classified because processing failed.
+        </p>
+      } @else {
+        <!-- Not yet classified (e.g. Uploaded / Queued / ExtractingText / TextExtracted) -->
+        <p class="mt-3 text-sm text-slate-500">Not classified yet.</p>
+      }
+    </section>
+
+    <!-- ====== Extracted metadata (schemaless key/value) ====== -->
+    <section class="mt-6 rounded-xl border border-slate-200 bg-white p-6">
+      <h3 class="text-sm font-semibold text-slate-900">Extracted metadata</h3>
+
+      @if (d.metadata !== null) {
+        @if (metadataRows().length === 0) {
+          <p class="mt-3 text-sm text-slate-500">No metadata extracted.</p>
+        } @else {
+          <dl class="mt-4 grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+            @for (row of metadataRows(); track row.key) {
+              <div class="min-w-0">
+                <dt class="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                  {{ row.label }}
+                </dt>
+                <dd class="mt-1 break-words text-sm text-slate-900">{{ row.value }}</dd>
+              </div>
+            }
+          </dl>
+        }
+      } @else if (isClassifying()) {
+        <div class="mt-3 flex items-center gap-3 text-sm text-slate-500" role="status">
+          <span
+            class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"
+            aria-hidden="true"
+          ></span>
+          Extracting metadata…
+        </div>
+      } @else if (isFailed()) {
+        <p class="mt-3 text-sm text-slate-500">No metadata — processing failed.</p>
+      } @else {
+        <p class="mt-3 text-sm text-slate-500">No metadata extracted yet.</p>
+      }
+    </section>
+
     <!-- ====== Extracted-text preview (lazy / expandable) ====== -->
     <section class="mt-6 rounded-xl border border-slate-200 bg-white">
       <button

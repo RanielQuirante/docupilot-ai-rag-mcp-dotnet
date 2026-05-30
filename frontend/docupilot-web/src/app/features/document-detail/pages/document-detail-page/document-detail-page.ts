@@ -21,6 +21,13 @@ import {
   NON_TERMINAL_STATUSES,
 } from '../../data/document-detail.models';
 
+/** One rendered metadata field (a key + its display value + whether it was nested). */
+interface MetadataRow {
+  readonly key: string;
+  readonly label: string;
+  readonly value: string;
+}
+
 /**
  * Full literal Tailwind class strings per status — no runtime concatenation, so
  * Tailwind's Oxide engine never purges them (DA-011 §6.6). Keys cover the full
@@ -38,14 +45,34 @@ const STATUS_BADGE_CLASSES: Readonly<Record<string, string>> = {
 };
 const STATUS_BADGE_FALLBACK = 'bg-slate-100 text-slate-700 ring-slate-500/20';
 
-/** Human-readable labels for audit actions (DA-024 set). Unknown values pass through. */
+/** Human-readable labels for audit actions (DA-024/DA-032 set). Unknown values pass through. */
 const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   Queued: 'Queued for processing',
   ExtractionStarted: 'Text extraction started',
   ExtractionSucceeded: 'Text extraction succeeded',
   ExtractionFailed: 'Text extraction failed',
+  ClassificationStarted: 'Classification started',
+  ClassificationSucceeded: 'Classification succeeded',
+  ClassificationFailed: 'Classification failed',
   ReprocessQueued: 'Re-queued for processing',
 };
+
+/**
+ * Full literal Tailwind class strings per classification category — no runtime
+ * concatenation so Tailwind's Oxide engine never purges them (DA-011 §6.6).
+ * Keys are the spec §5.3 display strings (with spaces) the API returns verbatim.
+ */
+const CATEGORY_BADGE_CLASSES: Readonly<Record<string, string>> = {
+  Contract: 'bg-indigo-100 text-indigo-800 ring-indigo-600/20',
+  Invoice: 'bg-emerald-100 text-emerald-800 ring-emerald-600/20',
+  'Employee Record': 'bg-sky-100 text-sky-800 ring-sky-600/20',
+  'Legal Document': 'bg-purple-100 text-purple-800 ring-purple-600/20',
+  'Compliance Document': 'bg-amber-100 text-amber-800 ring-amber-600/20',
+  'Client Correspondence': 'bg-cyan-100 text-cyan-800 ring-cyan-600/20',
+  'Policy Document': 'bg-teal-100 text-teal-800 ring-teal-600/20',
+  Unknown: 'bg-slate-100 text-slate-700 ring-slate-500/20',
+};
+const CATEGORY_BADGE_FALLBACK = 'bg-slate-100 text-slate-700 ring-slate-500/20';
 
 /** Re-poll cadence while the document is in a non-terminal state. */
 const POLL_INTERVAL_MS = 5000;
@@ -94,6 +121,29 @@ export class DocumentDetailPage {
   });
 
   protected readonly isFailed = computed<boolean>(() => this.detail()?.status === 'Failed');
+
+  /** True once classification has completed (the doc reached the `Classified` terminal). */
+  protected readonly isClassified = computed<boolean>(() => this.detail()?.status === 'Classified');
+
+  /** True while classification is actively running (between TextExtracted and Classified). */
+  protected readonly isClassifying = computed<boolean>(() => this.detail()?.status === 'Classifying');
+
+  /**
+   * The parsed metadata object flattened into displayable rows. Nested objects /
+   * arrays are JSON-stringified (readable, no fixed-schema assumption); empty
+   * `{}` yields `[]` (template shows "No metadata extracted"). Null → [].
+   */
+  protected readonly metadataRows = computed<readonly MetadataRow[]>(() => {
+    const meta = this.detail()?.metadata;
+    if (meta == null) {
+      return [];
+    }
+    return Object.keys(meta).map((key) => ({
+      key,
+      label: this.humanizeKey(key),
+      value: this.formatMetaValue(meta[key]),
+    }));
+  });
 
   /**
    * Re-process is allowed only from a terminal/idle state (Failed / Uploaded /
@@ -291,5 +341,48 @@ export class DocumentDetailPage {
 
   protected formatCharCount(count: number): string {
     return count.toLocaleString();
+  }
+
+  protected categoryBadgeClass(category: string): string {
+    return CATEGORY_BADGE_CLASSES[category] ?? CATEGORY_BADGE_FALLBACK;
+  }
+
+  /** 0..1 confidence → integer percentage clamped to [0,100]. */
+  protected confidencePercent(confidence: number): number {
+    if (!Number.isFinite(confidence)) {
+      return 0;
+    }
+    return Math.max(0, Math.min(100, Math.round(confidence * 100)));
+  }
+
+  /** Turn a JSON key (e.g. `invoiceNumber`, `due_date`) into a readable label. */
+  private humanizeKey(key: string): string {
+    const spaced = key
+      .replace(/[_-]+/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .trim();
+    if (spaced.length === 0) {
+      return key;
+    }
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+  }
+
+  /** Render a schemaless metadata value as a readable string (handles nested/array/null). */
+  private formatMetaValue(value: unknown): string {
+    if (value === null || value === undefined) {
+      return '—';
+    }
+    if (typeof value === 'string') {
+      return value.length === 0 ? '—' : value;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    // Nested object / array — show compact JSON so no field is silently dropped.
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
   }
 }

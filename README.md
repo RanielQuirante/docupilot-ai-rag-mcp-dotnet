@@ -188,14 +188,44 @@ The SQL Server container needs ~30–60 s to initialize its system databases on 
 **SQL Server container exits / restarts immediately.**
 Usually the SA password fails SQL Server's complexity policy. `SA_PASSWORD` in `.env` must be ≥ 8 characters and contain at least three of: uppercase, lowercase, digit, symbol. Fix it, then `docker compose down -v` (to clear the half-initialized volume) and `docker compose up` again.
 
-**Ollama responds but "has no model" / AI features do nothing.**
-Phase 1 starts only the Ollama runtime — no model is pulled. That's intentional; AI features arrive in a later phase. When needed, a model can be pulled into the running container, e.g.:
+**Ollama / the LLM model (Phase 4 — auto-pulled).**
+As of Phase 4 the stack **auto-pulls the classification model**. A one-shot
+`ollama-model-init` service waits for Ollama to become healthy, then runs
+`ollama pull ${LLM_MODEL}` (default **`llama3.2:3b`**, ~2 GB) into the
+`ollama-models` named volume and exits. The `docupilot-api` and
+`docupilot-worker` services gate on it
+(`depends_on: condition: service_completed_successfully`), so they never start
+against a model-less Ollama. On a **fresh** run the first `up` blocks while the
+~2 GB model downloads (one-time); the model then persists in the
+`ollama-models` volume across `docker compose down` (but not `down -v`), so
+later `up` runs find it already present and `ollama-model-init` is a fast no-op.
+
+Confirm the model is present:
 
 ```bash
-docker compose exec ollama ollama pull nomic-embed-text
+docker compose exec ollama ollama list      # should list llama3.2:3b
 ```
 
-The `ollama-models` named volume persists pulled models across `docker compose down` (but not `down -v`).
+**Manual fallback** — if the init was skipped or you want a different model,
+pull into the running container directly:
+
+```bash
+docker compose exec ollama ollama pull llama3.2:3b
+```
+
+**Cheaper / faster gate:** set `LLM_MODEL=llama3.2:1b` in `.env` (~1.3 GB) for a
+smaller model — faster but lower extraction quality. The model name is a single
+config value (`Llm__Model`), so swapping is zero-code.
+
+> **LLM latency:** inference runs **CPU-only** (no GPU assumed), so a single
+> classification takes **seconds to tens of seconds**. A slow first
+> classification after upload is normal — it is **not** a hang. Per-call timeout
+> is `Llm__TimeoutSeconds` (default 120 s).
+
+The full LLM configuration (`Llm__BaseUrl`, `Llm__Model`, `Llm__ApiStyle`,
+`Llm__TimeoutSeconds`, `Llm__MaxAttempts`, `Llm__MaxInputChars`,
+`Llm__Temperature`) is wired to both the API and Worker and is overridable via
+the `LLM_*` variables documented in `.env.example`.
 
 **First `docker compose up --build` looks hung.**
 It is almost certainly pulling base images (SQL Server and Ollama are the big ones). Run `docker compose logs -f` or watch Docker Desktop to confirm download progress. The pull is a one-time cost.

@@ -135,8 +135,20 @@
               <td class="px-4 py-3 text-slate-500">
                 {{ doc.uploadedAt | date: 'medium' }}
               </td>
-              <!-- Classification/Confidence not available until Phase 4 (backend contract omits them) -->
-              <td class="px-4 py-3 text-slate-400 italic">Pending</td>
+              <!-- Category chip from the Phase-4 list DTO (DA-032); null until Classified -->
+              <td class="px-4 py-3">
+                @if (doc.classification) {
+                  <span
+                    class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset"
+                    [class]="categoryChipClass(doc.classification)"
+                  >
+                    {{ doc.classification }}
+                  </span>
+                } @else {
+                  <span class="text-slate-400" aria-label="Not yet classified">—</span>
+                }
+              </td>
+              <!-- Confidence is detail-only in the Phase-4 contract (not on list rows) -->
               <td class="px-4 py-3 text-slate-400">—</td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
                 @if (canReprocess(doc)) {

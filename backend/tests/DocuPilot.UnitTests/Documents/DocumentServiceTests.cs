@@ -5,6 +5,7 @@ using DocuPilot.Repository.Abstractions;
 using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 
@@ -21,6 +22,8 @@ public sealed class DocumentServiceTests
 
     private readonly Mock<IDocumentRepository> _repository = new();
     private readonly Mock<IDocumentTextRepository> _textRepository = new();
+    private readonly Mock<IDocumentClassificationRepository> _classificationRepository = new();
+    private readonly Mock<IExtractedMetadataRepository> _metadataRepository = new();
     private readonly Mock<IAuditRepository> _auditRepository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IFileStorage> _fileStorage = new();
@@ -33,6 +36,12 @@ public sealed class DocumentServiceTests
         _unitOfWork
             .Setup(u => u.ExecuteInTransactionAsync(It.IsAny<Func<CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
             .Returns<Func<CancellationToken, Task>, CancellationToken>((action, ct) => action(ct));
+
+        // Default: no classifications for the page (unclassified docs) — list tests assert null
+        // category unless they override this.
+        _classificationRepository
+            .Setup(r => r.GetByDocumentIdsAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<DocumentClassification>());
     }
 
     private DocumentService CreateSut(long maxBytes = 25L * 1024 * 1024)
@@ -41,11 +50,14 @@ public sealed class DocumentServiceTests
         return new DocumentService(
             _repository.Object,
             _textRepository.Object,
+            _classificationRepository.Object,
+            _metadataRepository.Object,
             _auditRepository.Object,
             _unitOfWork.Object,
             _fileStorage.Object,
             _timeProvider,
-            options);
+            options,
+            NullLogger<DocumentService>.Instance);
     }
 
     private static DocumentUploadInput File(string name, string contentType, long length, string content = "data")

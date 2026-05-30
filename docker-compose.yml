@@ -64,6 +64,18 @@ services:
       Extraction__TimeoutSeconds: "${EXTRACTION_TIMEOUT_SECONDS:-60}"
       Extraction__MaxAttempts: "${EXTRACTION_MAX_ATTEMPTS:-3}"
       Extraction__MaxTextChars: "${EXTRACTION_MAX_TEXT_CHARS:-5000000}"
+      # Phase-4 LLM config (DA-032/DA-036). Wired to BOTH api + worker (env
+      # parity): the Worker makes the classification/metadata calls; the API may
+      # surface classification limits. BaseUrl = in-network ollama service +
+      # container port 11434 (NOT the host OLLAMA_PORT remap). Defaults via .env
+      # / compose (${VAR:-default}). Set LLM_MODEL=llama3.2:1b for a cheaper gate.
+      Llm__BaseUrl: "${LLM_BASE_URL:-http://ollama:11434}"
+      Llm__Model: "${LLM_MODEL:-llama3.2:3b}"
+      Llm__ApiStyle: "${LLM_API_STYLE:-ollama-native}"
+      Llm__TimeoutSeconds: "${LLM_TIMEOUT_SECONDS:-120}"
+      Llm__MaxAttempts: "${LLM_MAX_ATTEMPTS:-2}"
+      Llm__MaxInputChars: "${LLM_MAX_INPUT_CHARS:-12000}"
+      Llm__Temperature: "${LLM_TEMPERATURE:-0}"
     volumes:
       - docupilot-files:/app/files
     depends_on:
@@ -74,7 +86,9 @@ services:
       qdrant:
         condition: service_started
       ollama:
-        condition: service_started
+        condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   # ---- .NET 10 background worker (document pipeline host; no HTTP) -----------
@@ -98,6 +112,16 @@ services:
       Extraction__TimeoutSeconds: "${EXTRACTION_TIMEOUT_SECONDS:-60}"
       Extraction__MaxAttempts: "${EXTRACTION_MAX_ATTEMPTS:-3}"
       Extraction__MaxTextChars: "${EXTRACTION_MAX_TEXT_CHARS:-5000000}"
+      # Phase-4 LLM config (DA-032/DA-036). The Worker DOES the classification +
+      # metadata LLM calls, so it is the primary consumer; kept identical to the
+      # API for env parity. Same ${VAR:-default} pattern + in-network BaseUrl.
+      Llm__BaseUrl: "${LLM_BASE_URL:-http://ollama:11434}"
+      Llm__Model: "${LLM_MODEL:-llama3.2:3b}"
+      Llm__ApiStyle: "${LLM_API_STYLE:-ollama-native}"
+      Llm__TimeoutSeconds: "${LLM_TIMEOUT_SECONDS:-120}"
+      Llm__MaxAttempts: "${LLM_MAX_ATTEMPTS:-2}"
+      Llm__MaxInputChars: "${LLM_MAX_INPUT_CHARS:-12000}"
+      Llm__Temperature: "${LLM_TEMPERATURE:-0}"
     volumes:
       - docupilot-files:/app/files
     depends_on:
@@ -108,7 +132,9 @@ services:
       qdrant:
         condition: service_started
       ollama:
-        condition: service_started
+        condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   # ---- Angular 21 SPA served by NGINX (also reverse-proxies /api/*) ---------
@@ -153,14 +179,50 @@ services:
       - qdrant-data:/qdrant/storage
     restart: unless-stopped
 
-  # ---- Ollama local LLM runtime (no model pulled in Phase 1) ----------------
+  # ---- Ollama local LLM runtime (Phase 4: model auto-pulled by init below) --
+  # Healthcheck probes the in-container API so dependents can gate on readiness
+  # (`condition: service_healthy`). The Ollama image ships `ollama` on PATH but
+  # NOT curl/wget, so we probe via `ollama list` (exits 0 once the server's HTTP
+  # API answers). Pulled models persist in the ollama-models named volume across
+  # `up`/`down` (NOT `down -v`).
   ollama:
     image: ollama/ollama:latest
     ports:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     restart: unless-stopped
+
+  # ---- One-shot: pull the LLM model into the ollama-models volume -----------
+  # Phase 4 (DA-036). Ollama starts with NO model; the first live classification
+  # call would 404 ("model not found"). This init service waits for ollama to be
+  # HEALTHY, then `ollama pull ${LLM_MODEL}` (~2 GB for llama3.2:3b) INTO the
+  # shared ollama-models volume and exits 0. api/worker gate on it via
+  # `condition: service_completed_successfully` so they never call a model-less
+  # Ollama. Mirrors the docupilot-files-init pattern. The model persists in the
+  # volume, so a later `up` finds it already present and the pull is a fast no-op
+  # ("up to date") — it is only re-downloaded after `down -v` wipes the volume.
+  # Uses the same ollama/ollama image (already cached) with OLLAMA_HOST pointed
+  # at the ollama service, so the CLI talks to that server instead of starting
+  # its own. MANUAL fallback if this is skipped:
+  #   docker compose exec ollama ollama pull llama3.2:3b
+  ollama-model-init:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["ollama pull \"$${LLM_MODEL:-llama3.2:3b}\""]
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
+      LLM_MODEL: "${LLM_MODEL:-llama3.2:3b}"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
 
 # ---- Named volumes for stateful services -----------------------------------
 volumes:

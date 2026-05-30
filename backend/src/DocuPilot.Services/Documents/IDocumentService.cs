@@ -43,4 +43,16 @@ public interface IDocumentService
     /// Returns an empty list for a document with no events (or one that doesn't exist).
     /// </summary>
     Task<IReadOnlyList<AuditLogEntry>> GetAuditAsync(Guid id, CancellationToken ct);
+
+    /// <summary>
+    /// Returns the classification for a document (<c>GET /api/documents/{id}/classification</c>),
+    /// or <c>null</c> if the document has not been classified yet (controller maps to 404).
+    /// </summary>
+    Task<DocumentClassificationDto?> GetClassificationAsync(Guid id, CancellationToken ct);
+
+    /// <summary>
+    /// Returns the extracted metadata for a document (<c>GET /api/documents/{id}/metadata</c>) with
+    /// the stored JSON parsed into a real object, or <c>null</c> if not yet extracted (404).
+    /// </summary>
+    Task<DocumentMetadataResponse?> GetMetadataAsync(Guid id, CancellationToken ct);
 }

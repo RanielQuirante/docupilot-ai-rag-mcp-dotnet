@@ -1,4 +1,5 @@
 using DocuPilot.Infrastructure.FileStorage;
+using DocuPilot.Infrastructure.Llm;
 using DocuPilot.Infrastructure.Persistence;
 using DocuPilot.Infrastructure.TextExtraction;
 using DocuPilot.Repository;
@@ -47,6 +48,10 @@ public static class DependencyInjection
         // Extraction bounds (timeout / retry / max-chars) — env keys Extraction__* (DA-028).
         services.Configure<ExtractionOptions>(configuration.GetSection(ExtractionOptions.SectionName));
 
+        // Phase 4: LLM client + classification bounds — env keys Llm__* (DA-036 wires these on
+        // api AND worker). Bound here so both hosts get identical options.
+        services.Configure<LlmOptions>(configuration.GetSection(LlmOptions.SectionName));
+
         // System clock for testable timestamp generation. LocalFileStorage (and other
         // Infrastructure timestamp consumers) depend on TimeProvider, so it MUST be
         // registered alongside the services that need it — registering it here keeps the
@@ -65,6 +70,23 @@ public static class DependencyInjection
         services.AddSingleton<ITextExtractor, PdfTextExtractor>();
         services.AddSingleton<ITextExtractor, DocxTextExtractor>();
         services.AddSingleton<ITextExtractionService, TextExtractionService>();
+
+        // Phase 4: the prompt library (editable embedded resources) — stateless singleton.
+        services.AddSingleton<IPromptProvider, PromptProvider>();
+
+        // Phase 4: the LLM client as a typed HttpClient (IHttpClientFactory) targeting the
+        // in-network Ollama/OpenAI-compatible server. Base address + timeout from LlmOptions.
+        // Registered here in the shared extension so the Worker host (DA-033) composes the exact
+        // same client (no DA-021-style drift). The HttpClient.Timeout is set generously to the
+        // configured per-call timeout (the orchestrator also applies a linked timeout CTS).
+        var llmOptions = new LlmOptions();
+        configuration.GetSection(LlmOptions.SectionName).Bind(llmOptions);
+        services.AddHttpClient<ILlmClient, OllamaLlmClient>(client =>
+        {
+            client.BaseAddress = new Uri(llmOptions.BaseUrl);
+            // A little headroom over the per-call timeout so the orchestrator's CTS fires first.
+            client.Timeout = TimeSpan.FromSeconds(llmOptions.TimeoutSeconds + 30);
+        });
 
         // Data-access registration is an Infrastructure concern (Infrastructure owns the
         // DbContext that repositories depend on), so AddInfrastructure internally calls

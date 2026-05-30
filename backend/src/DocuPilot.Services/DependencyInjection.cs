@@ -25,6 +25,12 @@ public static class DependencyInjection
         // composition roots can't drift (lessons.md DA-021).
         services.AddScoped<IDocumentProcessingService, DocumentProcessingService>();
 
+        // Phase 4: the reusable classification + metadata orchestrator (claim TextExtracted →
+        // Classifying, two LLM calls, validate/coerce, transactional persist + audit). The Worker
+        // host (DA-033) resolves the SAME registration — keep it in this shared extension so the
+        // two composition roots can't drift (lessons.md DA-021).
+        services.AddScoped<IClassificationService, ClassificationService>();
+
         return services;
     }
 }

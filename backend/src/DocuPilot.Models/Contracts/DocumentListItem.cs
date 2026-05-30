@@ -12,6 +12,7 @@ namespace DocuPilot.Models.Contracts;
 /// <param name="UploadedAt">Upload timestamp (UTC).</param>
 /// <param name="ProcessedAt">Processing-complete timestamp (UTC); null until Phase 3.</param>
 /// <param name="FailureReason">Human-readable failure reason; populated only when <c>Status == Failed</c>, otherwise null.</param>
+/// <param name="Classification">The category display string (e.g. "Invoice"); null until the document is classified. Confidence/metadata are detail-only — the list stays lean (ADR §7).</param>
 public sealed record DocumentListItem(
     Guid Id,
     string FileName,
@@ -20,4 +21,5 @@ public sealed record DocumentListItem(
     string Status,
     DateTime UploadedAt,
     DateTime? ProcessedAt,
-    string? FailureReason);
+    string? FailureReason,
+    string? Classification);

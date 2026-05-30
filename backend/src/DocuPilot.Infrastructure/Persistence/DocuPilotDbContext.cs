@@ -22,6 +22,10 @@ public sealed class DocuPilotDbContext : DbContext
 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    public DbSet<DocumentClassification> DocumentClassifications => Set<DocumentClassification>();
+
+    public DbSet<ExtractedMetadata> ExtractedMetadata => Set<ExtractedMetadata>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

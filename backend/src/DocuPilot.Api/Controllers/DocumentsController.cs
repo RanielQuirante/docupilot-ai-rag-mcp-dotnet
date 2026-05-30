@@ -110,8 +110,35 @@ public sealed class DocumentsController : ControllerBase
     }
 
     /// <summary>
-    /// Manually (re)queues a document for processing — used to retry a <c>Failed</c> doc or
-    /// re-extract a <c>TextExtracted</c>/<c>Uploaded</c> one. Returns <c>202 Accepted</c>
+    /// Returns the LLM classification for a document (category + confidence + reason). <c>404</c>
+    /// if the document has not been classified yet (or does not exist).
+    /// </summary>
+    [HttpGet("{id:guid}/classification")]
+    [ProducesResponseType(typeof(DocumentClassificationDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DocumentClassificationDto>> GetClassification(Guid id, CancellationToken ct)
+    {
+        var classification = await _documentService.GetClassificationAsync(id, ct);
+        return classification is null ? NotFound() : Ok(classification);
+    }
+
+    /// <summary>
+    /// Returns the extracted structured metadata for a document, as a parsed JSON object (not a
+    /// string). <c>404</c> if metadata has not been extracted yet (or the document does not exist).
+    /// </summary>
+    [HttpGet("{id:guid}/metadata")]
+    [ProducesResponseType(typeof(DocumentMetadataResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DocumentMetadataResponse>> GetMetadata(Guid id, CancellationToken ct)
+    {
+        var metadata = await _documentService.GetMetadataAsync(id, ct);
+        return metadata is null ? NotFound() : Ok(metadata);
+    }
+
+    /// <summary>
+    /// Manually (re)queues a document for the FULL pipeline (re-extract → re-classify) — used to
+    /// retry a <c>Failed</c> doc or re-run a <c>Classified</c>/<c>TextExtracted</c>/<c>Uploaded</c>
+    /// one (the upsert-by-DocumentId children are replaced on the re-run). Returns <c>202 Accepted</c>
     /// (the work is queued for the Worker, not done synchronously), <c>404</c> if missing, or
     /// <c>409 Conflict</c> if the document is already <c>Queued</c>/<c>ExtractingText</c>.
     /// </summary>

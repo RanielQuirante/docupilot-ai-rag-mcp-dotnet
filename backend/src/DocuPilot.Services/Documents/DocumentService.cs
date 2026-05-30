@@ -5,6 +5,7 @@ using DocuPilot.Models.Enums;
 using DocuPilot.Repository.Abstractions;
 using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Common;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace DocuPilot.Services.Documents;
@@ -40,28 +41,37 @@ public sealed class DocumentService : IDocumentService
 
     private readonly IDocumentRepository _repository;
     private readonly IDocumentTextRepository _textRepository;
+    private readonly IDocumentClassificationRepository _classificationRepository;
+    private readonly IExtractedMetadataRepository _metadataRepository;
     private readonly IAuditRepository _auditRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileStorage _fileStorage;
     private readonly TimeProvider _timeProvider;
     private readonly DocumentUploadOptions _options;
+    private readonly ILogger<DocumentService> _logger;
 
     public DocumentService(
         IDocumentRepository repository,
         IDocumentTextRepository textRepository,
+        IDocumentClassificationRepository classificationRepository,
+        IExtractedMetadataRepository metadataRepository,
         IAuditRepository auditRepository,
         IUnitOfWork unitOfWork,
         IFileStorage fileStorage,
         TimeProvider timeProvider,
-        IOptions<DocumentUploadOptions> options)
+        IOptions<DocumentUploadOptions> options,
+        ILogger<DocumentService> logger)
     {
         _repository = repository;
         _textRepository = textRepository;
+        _classificationRepository = classificationRepository;
+        _metadataRepository = metadataRepository;
         _auditRepository = auditRepository;
         _unitOfWork = unitOfWork;
         _fileStorage = fileStorage;
         _timeProvider = timeProvider;
         _options = options.Value;
+        _logger = logger;
     }
 
     public async Task<UploadDocumentResponse> UploadAsync(IReadOnlyList<DocumentUploadInput> files, CancellationToken ct)
@@ -147,6 +157,15 @@ public sealed class DocumentService : IDocumentService
 
         var (items, totalCount) = await _repository.ListAsync(page, pageSize, ct);
 
+        // Batch-load classifications for the page (no N+1) so each row can carry its category
+        // string. Documents not yet classified simply have no entry → null category (DA-030 lesson:
+        // the LIST DTO must actually carry the field the library row renders).
+        var ids = items.Select(d => d.Id).ToList();
+        var classifications = await _classificationRepository.GetByDocumentIdsAsync(ids, ct);
+        var categoryByDoc = classifications.ToDictionary(
+            c => c.DocumentId,
+            c => DocumentCategoryNames.ToDisplay(c.Classification));
+
         var dtos = items
             .Select(d => new DocumentListItem(
                 d.Id,
@@ -156,7 +175,8 @@ public sealed class DocumentService : IDocumentService
                 d.Status.ToString(),
                 d.UploadedAt,
                 d.ProcessedAt,
-                d.FailureReason))
+                d.FailureReason,
+                categoryByDoc.GetValueOrDefault(d.Id)))
             .ToList();
 
         return new PagedResult<DocumentListItem>(dtos, page, pageSize, totalCount);
@@ -174,6 +194,10 @@ public sealed class DocumentService : IDocumentService
         // extracted; the full LOB is fetched separately via GetTextAsync.
         var text = await _textRepository.GetByDocumentIdAsync(id, ct);
 
+        // Phase 4 children are 0-or-1 per document — read paths are null-tolerant (DA-031 #12).
+        var classification = await _classificationRepository.GetByDocumentIdAsync(id, ct);
+        var metadata = await _metadataRepository.GetByDocumentIdAsync(id, ct);
+
         return new DocumentDetail(
             document.Id,
             document.FileName,
@@ -184,7 +208,64 @@ public sealed class DocumentService : IDocumentService
             document.ProcessedAt,
             document.FailureReason,
             text?.CharCount,
-            text?.ExtractedAt);
+            text?.ExtractedAt,
+            classification is null ? null : ToClassificationDto(classification),
+            metadata is null ? null : ParseMetadata(metadata.MetadataJson));
+    }
+
+    public async Task<DocumentClassificationDto?> GetClassificationAsync(Guid id, CancellationToken ct)
+    {
+        var classification = await _classificationRepository.GetByDocumentIdAsync(id, ct);
+        return classification is null ? null : ToClassificationDto(classification);
+    }
+
+    public async Task<DocumentMetadataResponse?> GetMetadataAsync(Guid id, CancellationToken ct)
+    {
+        var metadata = await _metadataRepository.GetByDocumentIdAsync(id, ct);
+        if (metadata is null)
+        {
+            return null;
+        }
+
+        return new DocumentMetadataResponse(
+            metadata.DocumentId,
+            ParseMetadata(metadata.MetadataJson),
+            metadata.Model,
+            metadata.CreatedAt);
+    }
+
+    private static DocumentClassificationDto ToClassificationDto(DocumentClassification c) => new(
+        DocumentCategoryNames.ToDisplay(c.Classification),
+        c.Confidence,
+        c.Reason,
+        c.Model,
+        c.CreatedAt);
+
+    /// <summary>
+    /// Parses the stored <c>MetadataJson</c> into a real JSON object so the API returns an object,
+    /// not a string. The orchestrator guarantees a valid object (at minimum <c>{}</c>); be
+    /// null-tolerant of any legacy/garbage value by degrading to an empty object.
+    /// </summary>
+    private JsonElement ParseMetadata(string? metadataJson)
+    {
+        if (!string.IsNullOrWhiteSpace(metadataJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(metadataJson);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    return doc.RootElement.Clone();
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Stored MetadataJson was not parseable; returning empty object.");
+            }
+        }
+
+        using var empty = JsonDocument.Parse("{}");
+        return empty.RootElement.Clone();
     }
 
     public async Task<DocumentTextResponse?> GetTextAsync(Guid id, CancellationToken ct)
