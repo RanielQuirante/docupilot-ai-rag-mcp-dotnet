@@ -100,6 +100,20 @@ services:
       Qdrant__GrpcPort: "${QDRANT_GRPC_PORT_INTERNAL:-6334}"
       Qdrant__CollectionName: "${QDRANT_COLLECTION_NAME:-document_chunks}"
       Qdrant__UseTls: "${QDRANT_USE_TLS:-false}"
+      # Phase-6 Semantic Search config (DA-045/DA-048). API-ONLY: the search
+      # endpoint (POST /api/search) lives on the API; the Worker does NOT run
+      # search, so these are deliberately NOT wired to docupilot-worker. FROZEN
+      # DA-045 contract keys, ALL code-defaulted (search works with ZERO env
+      # changes) — wired here only so they're overridable via .env, same
+      # ${VAR:-default} pattern as the Embedding__*/Llm__* blocks. No new image,
+      # model, port, or Qdrant/SQL change (Phase 6 is read-only over Phase-5
+      # vectors). Limit/over-fetch knobs bound the Qdrant fetch + SQL IN-set.
+      Search__DefaultLimit: "${SEARCH_DEFAULT_LIMIT:-10}"
+      Search__MaxLimit: "${SEARCH_MAX_LIMIT:-50}"
+      Search__ChunkOverFetchFactor: "${SEARCH_CHUNK_OVER_FETCH_FACTOR:-5}"
+      Search__MaxChunkFetch: "${SEARCH_MAX_CHUNK_FETCH:-200}"
+      Search__MatchedTextMaxChars: "${SEARCH_MATCHED_TEXT_MAX_CHARS:-300}"
+      Search__MinScore: "${SEARCH_MIN_SCORE:-0}"
     volumes:
       - docupilot-files:/app/files
     depends_on:

@@ -6,6 +6,7 @@ using DocuPilot.Infrastructure.Vector;
 using DocuPilot.Repository;
 using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
+using DocuPilot.Services.Search;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,6 +61,10 @@ public static class DependencyInjection
         services.Configure<ChunkingConfig>(configuration.GetSection(ChunkingConfig.SectionName));
         services.Configure<EmbeddingOptions>(configuration.GetSection(EmbeddingOptions.SectionName));
         services.Configure<QdrantOptions>(configuration.GetSection(QdrantOptions.SectionName));
+
+        // Phase 6: semantic search bounds — env keys Search__* (DA-045). All keys have code
+        // defaults, so search works with ZERO env changes (DevOps DA-048 is optional, docs-only).
+        services.Configure<SearchOptions>(configuration.GetSection(SearchOptions.SectionName));
 
         // System clock for testable timestamp generation. LocalFileStorage (and other
         // Infrastructure timestamp consumers) depend on TimeProvider, so it MUST be

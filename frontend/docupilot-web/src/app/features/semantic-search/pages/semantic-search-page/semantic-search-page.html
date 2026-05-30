@@ -1,6 +1,198 @@
-<app-page-shell title="Semantic Search" subtitle="Coming soon">
-  <p class="text-sm leading-relaxed text-slate-600">
-    This slice is scaffolded as part of the vertical-slice foundation. The full Semantic Search
-    experience lands in a later phase.
-  </p>
+<app-page-shell
+  title="Semantic Search"
+  subtitle="Search your documents by meaning, in plain English"
+>
+  <!-- NL search bar -->
+  <form
+    class="mb-4 flex flex-wrap items-stretch gap-3"
+    (submit)="$event.preventDefault(); search()"
+  >
+    <label class="relative min-w-0 flex-1">
+      <span class="sr-only">Search documents in natural language</span>
+      <input
+        type="search"
+        [value]="query()"
+        (input)="onQueryInput($any($event.target).value)"
+        [disabled]="isLoading()"
+        placeholder="e.g. agreements that are about to expire"
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50"
+      />
+    </label>
+
+    <label class="relative">
+      <span class="sr-only">Filter by category</span>
+      <select
+        [value]="category()"
+        (change)="onCategoryChange($any($event.target).value)"
+        [disabled]="isLoading()"
+        class="h-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50"
+      >
+        <option value="">All categories</option>
+        @for (cat of categories; track cat) {
+          <option [value]="cat">{{ cat }}</option>
+        }
+      </select>
+    </label>
+
+    <button
+      type="submit"
+      [disabled]="!canSearch()"
+      class="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      @if (isLoading()) {
+        Searching…
+      } @else {
+        Search
+      }
+    </button>
+  </form>
+
+  @switch (state()) {
+    @case ('idle') {
+      <!-- Idle: pre-search prompt -->
+      <div
+        class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center"
+      >
+        <p class="text-sm font-medium text-slate-700">Search by meaning, not just keywords</p>
+        <p class="mx-auto mt-1 max-w-md text-sm text-slate-500">
+          Ask in plain English — for example
+          <span class="font-medium text-slate-600">“agreements about to expire”</span> or
+          <span class="font-medium text-slate-600">“invoices from last quarter”</span>. Matching
+          documents appear here, most relevant first.
+        </p>
+      </div>
+    }
+
+    @case ('loading') {
+      <!-- Loading: embedding the query + vector search round-trip -->
+      <div
+        role="status"
+        class="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-16 text-sm text-slate-500"
+      >
+        <span
+          class="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"
+          aria-hidden="true"
+        ></span>
+        Searching documents…
+      </div>
+    }
+
+    @case ('empty') {
+      <!-- Empty: a successful search that matched nothing (200 + results: []) -->
+      <div
+        class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center"
+      >
+        <p class="text-sm font-medium text-slate-700">No matching documents</p>
+        <p class="mx-auto mt-1 max-w-md text-sm text-slate-500">
+          Nothing matched “{{ lastQuery() }}”. Try rephrasing your search, or remove the category
+          filter to widen the results.
+        </p>
+      </div>
+    }
+
+    @case ('unavailable') {
+      <!-- 503: embedder / vector service starting or down (retryable) -->
+      <div
+        role="alert"
+        class="rounded-xl border border-amber-200 bg-amber-50 px-5 py-6 text-sm text-amber-800"
+      >
+        <p class="font-medium">Search is temporarily unavailable</p>
+        <p class="mt-1 text-amber-700">
+          The embedding / vector service is starting up or briefly unavailable. Please try again
+          in a few moments.
+        </p>
+        <button
+          type="button"
+          (click)="search()"
+          class="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 focus:ring-2 focus:ring-amber-500/30 focus:outline-none"
+        >
+          Try again
+        </button>
+      </div>
+    }
+
+    @case ('error') {
+      <!-- Generic transport / 500 failure -->
+      <div
+        role="alert"
+        class="rounded-xl border border-red-200 bg-red-50 px-5 py-6 text-sm text-red-800"
+      >
+        <p class="font-medium">Search failed</p>
+        <p class="mt-1 text-red-700">
+          Something went wrong running your search. The API may be unreachable — please try again.
+        </p>
+        <button
+          type="button"
+          (click)="search()"
+          class="mt-3 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 focus:ring-2 focus:ring-red-500/30 focus:outline-none"
+        >
+          Retry
+        </button>
+      </div>
+    }
+
+    @case ('results') {
+      <!-- Ranked results, one card per document (best chunk wins), score-desc -->
+      <p class="mb-3 text-sm text-slate-500">
+        <span class="font-medium text-slate-700">{{ results().length }}</span>
+        result{{ results().length === 1 ? '' : 's' }} for “{{ lastQuery() }}”
+      </p>
+
+      <ul class="flex flex-col gap-3">
+        @for (result of results(); track result.documentId) {
+          <li
+            class="rounded-xl border border-slate-200 bg-white p-4 transition hover:border-indigo-300 hover:shadow-sm"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <a
+                [routerLink]="['/documents', result.documentId]"
+                class="max-w-full truncate text-sm font-semibold text-indigo-600 hover:text-indigo-500 hover:underline"
+                [title]="result.fileName"
+              >
+                {{ result.fileName }}
+              </a>
+
+              <div class="flex shrink-0 items-center gap-2">
+                @if (result.classification) {
+                  <span
+                    class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset"
+                    [class]="categoryChipClass(result.classification)"
+                  >
+                    {{ result.classification }}
+                  </span>
+                } @else {
+                  <span
+                    class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-400 ring-1 ring-inset ring-slate-500/20"
+                    aria-label="Unclassified"
+                  >
+                    Unclassified
+                  </span>
+                }
+
+                <!-- Qdrant cosine relevance score, shown as a percentage -->
+                <span
+                  class="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20 tabular-nums"
+                  [title]="'Cosine similarity ' + result.score"
+                >
+                  {{ formatScore(result.score) }} match
+                </span>
+              </div>
+            </div>
+
+            <!-- Matched passage from the most relevant chunk -->
+            <p class="mt-2 line-clamp-3 text-sm leading-relaxed text-slate-600">
+              {{ result.matchedText }}
+            </p>
+
+            <a
+              [routerLink]="['/documents', result.documentId]"
+              class="mt-2 inline-block text-xs font-medium text-slate-500 hover:text-indigo-600 hover:underline"
+            >
+              View source document →
+            </a>
+          </li>
+        }
+      </ul>
+    }
+  }
 </app-page-shell>

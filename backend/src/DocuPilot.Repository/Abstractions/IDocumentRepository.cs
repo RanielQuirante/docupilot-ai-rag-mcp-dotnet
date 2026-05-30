@@ -124,4 +124,13 @@ public interface IDocumentRepository
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The page of entities and the total count across all pages.</returns>
     Task<(IReadOnlyList<Document> Items, long TotalCount)> ListAsync(int page, int pageSize, CancellationToken ct);
+
+    /// <summary>
+    /// Batch-loads documents by a set of ids (no-tracking) — the read-only hydration seam for
+    /// Phase-6 semantic search (DA-045). A single <c>WHERE Id IN (@ids)</c> primary-key seek (no
+    /// N+1); ids the vector search returned that no longer exist in SQL are simply absent from the
+    /// result (drift guard). Additive over the Phase-5 frozen repo surface — no existing signature
+    /// changes.
+    /// </summary>
+    Task<IReadOnlyList<Document>> GetByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);
 }

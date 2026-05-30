@@ -64,6 +64,7 @@ Once the stack is up, these endpoints are published on `localhost` (ports are ov
 | API | http://localhost:5010 | .NET 10 Web API |
 | API Swagger | http://localhost:5010/swagger | OpenAPI UI (Development only) |
 | API health | http://localhost:5010/health | Liveness JSON (`status: healthy`) |
+| API search | http://localhost:5010/api/search | Semantic search (`POST`, NL query → ranked docs; Phase 6) |
 | Web | http://localhost:4210 | Angular SPA (served by NGINX) |
 | SQL Server | localhost:1433 | Relational metadata store (SA login) |
 | Qdrant HTTP | http://localhost:6333 | Vector DB REST API + dashboard |
@@ -279,6 +280,18 @@ The full Phase-5 configuration (`Chunking__MaxChars`, `Chunking__OverlapChars`,
 `Qdrant__CollectionName`, `Qdrant__UseTls`) is wired to both the API and Worker
 and is overridable via the `CHUNKING_*` / `EMBEDDING_*` / `QDRANT_*` variables
 documented in `.env.example`.
+
+**Semantic search (Phase 6 — read-only `POST /api/search`).**
+Phase 6 adds a read-only semantic-search endpoint **on the API only**
+(`POST /api/search`): it embeds the natural-language query with the same Phase-5
+embedding model, runs a cosine search over the Qdrant vectors, and returns the
+best-matching documents ranked by score. It adds **no new image, model, port, or
+Qdrant/SQL change** — it reads the vectors Phase 5 already produced. Its tuning
+keys (`Search__DefaultLimit`, `Search__MaxLimit`, `Search__ChunkOverFetchFactor`,
+`Search__MaxChunkFetch`, `Search__MatchedTextMaxChars`, `Search__MinScore`) are
+**all code-defaulted, so search works out-of-the-box with zero `.env` changes**;
+they are wired to `docupilot-api` (not the Worker) and are optionally overridable
+via the `SEARCH_*` variables documented in `.env.example`.
 
 **First `docker compose up --build` looks hung.**
 It is almost certainly pulling base images (SQL Server and Ollama are the big ones). Run `docker compose logs -f` or watch Docker Desktop to confirm download progress. The pull is a one-time cost.

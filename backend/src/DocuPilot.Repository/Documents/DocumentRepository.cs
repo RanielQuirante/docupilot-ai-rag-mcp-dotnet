@@ -204,6 +204,21 @@ public sealed class DocumentRepository : IDocumentRepository
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<Document>> GetByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        // Single WHERE Id IN (@ids) primary-key seek — no N+1 (Phase-6 search hydration, DA-045).
+        // No-tracking: a pure read; the caller maps to DTOs and never mutates these entities.
+        return await _dbContext.Set<Document>()
+            .AsNoTracking()
+            .Where(d => ids.Contains(d.Id))
+            .ToListAsync(ct);
+    }
+
     public async Task<(IReadOnlyList<Document> Items, long TotalCount)> ListAsync(int page, int pageSize, CancellationToken ct)
     {
         var query = _dbContext.Set<Document>().AsNoTracking();

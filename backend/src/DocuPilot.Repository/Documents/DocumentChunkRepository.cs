@@ -68,4 +68,19 @@ public sealed class DocumentChunkRepository : IDocumentChunkRepository
             .AsNoTracking()
             .CountAsync(c => c.DocumentId == documentId, ct);
     }
+
+    public async Task<IReadOnlyList<DocumentChunk>> GetByIdsAsync(IReadOnlyCollection<Guid> chunkIds, CancellationToken ct)
+    {
+        if (chunkIds.Count == 0)
+        {
+            return [];
+        }
+
+        // Single WHERE Id IN (@chunkIds) primary-key seek — no N+1 (Phase-6 matchedText hydration,
+        // DA-045). No-tracking: a pure read of the winning chunks' authoritative Content.
+        return await _dbContext.Set<DocumentChunk>()
+            .AsNoTracking()
+            .Where(c => chunkIds.Contains(c.Id))
+            .ToListAsync(ct);
+    }
 }

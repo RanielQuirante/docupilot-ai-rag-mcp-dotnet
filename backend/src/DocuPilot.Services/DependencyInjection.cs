@@ -1,5 +1,6 @@
 using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
+using DocuPilot.Services.Search;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DocuPilot.Services;
@@ -41,6 +42,11 @@ public static class DependencyInjection
         // (DA-040) resolves the SAME registration — keep it in this shared extension so the two
         // composition roots can't drift (lessons.md DA-021).
         services.AddScoped<IEmbeddingService, EmbeddingService>();
+
+        // Phase 6: the semantic search orchestrator (embed query → vector search → group-by-doc →
+        // rank → batch-hydrate). Read-only; reuses the already-registered IEmbeddingClient /
+        // IVectorStore / repositories. Scoped to align with the scoped repositories/DbContext.
+        services.AddScoped<ISearchService, SearchService>();
 
         return services;
     }
