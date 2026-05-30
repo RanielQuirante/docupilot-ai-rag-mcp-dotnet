@@ -1,4 +1,5 @@
 using DocuPilot.Repository.Abstractions;
+using DocuPilot.Repository.Audit;
 using DocuPilot.Repository.Documents;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,6 +24,14 @@ public static class DependencyInjection
         // EF DbContext (registered by Infrastructure as the concrete DocuPilotDbContext),
         // which keeps this project provider-agnostic (DA-011 §2.3/§2.7).
         services.AddScoped<IDocumentRepository, DocumentRepository>();
+
+        // Phase 3 data-access seams: extracted-text (upsert-by-DocumentId) + audit trail,
+        // plus the transactional commit seam the processing orchestrator uses to write
+        // status + text + audit atomically.
+        services.AddScoped<IDocumentTextRepository, DocumentTextRepository>();
+        services.AddScoped<IAuditRepository, AuditRepository>();
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
+
         return services;
     }
 }

@@ -1,0 +1,24 @@
+namespace DocuPilot.Models.Enums;
+
+/// <summary>
+/// Audit event names for the document lifecycle (stored as the enum <b>name</b> string in
+/// <c>AuditLogs.Action</c>, same human-readable rationale as <see cref="DocumentStatus"/>).
+/// The Phase-3 set per DA-023 §P3.3 / ADR §5.1.
+/// </summary>
+public enum AuditAction
+{
+    /// <summary>Document queued for processing at upload time (written by the API in the upload transaction).</summary>
+    Queued,
+
+    /// <summary>Worker successfully claimed the document (Queued → ExtractingText).</summary>
+    ExtractionStarted,
+
+    /// <summary>Text extraction succeeded and was persisted (ExtractingText → TextExtracted).</summary>
+    ExtractionSucceeded,
+
+    /// <summary>Text extraction failed after retries (ExtractingText → Failed).</summary>
+    ExtractionFailed,
+
+    /// <summary>Document re-queued for processing via the manual /process trigger or a stale-claim reset.</summary>
+    ReprocessQueued,
+}

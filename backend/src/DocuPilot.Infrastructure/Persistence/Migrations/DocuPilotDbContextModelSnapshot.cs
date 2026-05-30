@@ -22,6 +22,39 @@ namespace DocuPilot.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("DocuPilot.Models.Entities.AuditLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DetailsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EntityName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntityId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_AuditLogs_EntityId_CreatedAt");
+
+                    b.ToTable("AuditLogs", (string)null);
+                });
+
             modelBuilder.Entity("DocuPilot.Models.Entities.Document", b =>
                 {
                     b.Property<Guid>("Id")
@@ -31,6 +64,10 @@ namespace DocuPilot.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("FileName")
                         .IsRequired()
@@ -58,11 +95,50 @@ namespace DocuPilot.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_Documents_Status");
+
                     b.HasIndex("UploadedAt")
                         .IsDescending()
                         .HasDatabaseName("IX_Documents_UploadedAt");
 
                     b.ToTable("Documents", (string)null);
+                });
+
+            modelBuilder.Entity("DocuPilot.Models.Entities.DocumentText", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CharCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_DocumentTexts_DocumentId");
+
+                    b.ToTable("DocumentTexts", (string)null);
+                });
+
+            modelBuilder.Entity("DocuPilot.Models.Entities.DocumentText", b =>
+                {
+                    b.HasOne("DocuPilot.Models.Entities.Document", null)
+                        .WithOne()
+                        .HasForeignKey("DocuPilot.Models.Entities.DocumentText", "DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

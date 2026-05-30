@@ -1,5 +1,6 @@
 using DocuPilot.Infrastructure.FileStorage;
 using DocuPilot.Infrastructure.Persistence;
+using DocuPilot.Infrastructure.TextExtraction;
 using DocuPilot.Repository;
 using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
@@ -43,6 +44,9 @@ public static class DependencyInjection
         services.Configure<FileStorageOptions>(configuration.GetSection(FileStorageOptions.SectionName));
         services.Configure<DocumentUploadOptions>(configuration.GetSection(DocumentUploadOptions.SectionName));
 
+        // Extraction bounds (timeout / retry / max-chars) — env keys Extraction__* (DA-028).
+        services.Configure<ExtractionOptions>(configuration.GetSection(ExtractionOptions.SectionName));
+
         // System clock for testable timestamp generation. LocalFileStorage (and other
         // Infrastructure timestamp consumers) depend on TimeProvider, so it MUST be
         // registered alongside the services that need it — registering it here keeps the
@@ -53,6 +57,14 @@ public static class DependencyInjection
 
         // Local-filesystem implementation of the IFileStorage port (defined in Services).
         services.AddSingleton<IFileStorage, LocalFileStorage>();
+
+        // Text-extraction port implementations (Phase 3) + the resolver/dispatch entry point.
+        // Stateless → singletons. Registered here in the shared extension so the Worker host
+        // (DA-025) composes the exact same extractor set (no DA-021-style drift).
+        services.AddSingleton<ITextExtractor, PlainTextExtractor>();
+        services.AddSingleton<ITextExtractor, PdfTextExtractor>();
+        services.AddSingleton<ITextExtractor, DocxTextExtractor>();
+        services.AddSingleton<ITextExtractionService, TextExtractionService>();
 
         // Data-access registration is an Infrastructure concern (Infrastructure owns the
         // DbContext that repositories depend on), so AddInfrastructure internally calls

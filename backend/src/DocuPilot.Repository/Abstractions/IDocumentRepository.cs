@@ -16,6 +16,50 @@ public interface IDocumentRepository
     Task AddAsync(Document document, CancellationToken ct);
 
     /// <summary>
+    /// Stages a new document row on the tracked context WITHOUT calling SaveChanges, so the
+    /// caller can commit it atomically alongside other writes (e.g. the upload audit row) via
+    /// <see cref="IUnitOfWork"/>.
+    /// </summary>
+    Task AddTrackedAsync(Document document, CancellationToken ct);
+
+    /// <summary>
+    /// Loads a single tracked document by id, or <c>null</c> if it does not exist.
+    /// Tracked (not <c>AsNoTracking</c>) so the caller can mutate + persist it inside a
+    /// transaction (status transitions). Used by detail/process flows.
+    /// </summary>
+    Task<Document?> GetByIdAsync(Guid id, CancellationToken ct);
+
+    /// <summary>
+    /// Atomically claims the oldest <c>Queued</c> document, transitioning it to
+    /// <c>ExtractingText</c> via a single guarded <c>ExecuteUpdateAsync</c>
+    /// (<c>WHERE Id = @id AND Status = Queued</c>). Returns <c>true</c> if this call won the
+    /// claim (affected rows = 1), <c>false</c> if another worker/iteration already claimed it.
+    /// Used by the Worker (DA-025); exposed here so the claim is a single compare-and-swap.
+    /// </summary>
+    Task<bool> TryClaimAsync(Guid id, CancellationToken ct);
+
+    /// <summary>Persists pending changes on the tracked document(s). Used after mutating a tracked entity.</summary>
+    Task SaveChangesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Returns the ids of the oldest <c>Queued</c> documents (FIFO by <c>UploadedAt ASC</c>),
+    /// up to <paramref name="max"/>. Read-only / no-tracking selection used by the Worker poller
+    /// (DA-025); the actual claim is the atomic <see cref="TryClaimAsync"/> on each id. Backed by
+    /// <c>IX_Documents_Status</c>.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetNextQueuedIdsAsync(int max, CancellationToken ct);
+
+    /// <summary>
+    /// Stale-claim recovery (DA-024 §, PM Q4 — audit-timestamp, no <c>ClaimedAt</c> column):
+    /// returns the ids of documents stuck in <c>ExtractingText</c> whose most-recent
+    /// <c>ExtractionStarted</c> audit row is OLDER than <paramref name="cutoffUtc"/> (i.e. a
+    /// crash/host-cancellation left them claimed but un-finished). The caller resets each to
+    /// <c>Queued</c> with an audit row. Read-only / no-tracking; backed by
+    /// <c>IX_Documents_Status</c> + <c>IX_AuditLogs_EntityId_CreatedAt</c>.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetStaleExtractingIdsAsync(DateTime cutoffUtc, CancellationToken ct);
+
+    /// <summary>
     /// Returns one page of documents ordered by <c>UploadedAt DESC</c> (newest first,
     /// backed by <c>IX_Documents_UploadedAt</c>) together with the total row count for
     /// pagination metadata.

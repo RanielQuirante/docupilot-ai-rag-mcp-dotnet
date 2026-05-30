@@ -1,6 +1,247 @@
-<app-page-shell title="Document Detail" subtitle="Coming soon">
-  <p class="text-sm leading-relaxed text-slate-600">
-    This slice is scaffolded as part of the vertical-slice foundation. The full Document Detail
-    experience lands in a later phase.
+<app-page-shell title="Document Detail" subtitle="Processing status, activity, and extracted text">
+  <p class="mb-6">
+    <a
+      routerLink="/library"
+      class="text-sm font-medium text-indigo-600 hover:text-indigo-500 hover:underline"
+    >
+      &larr; Back to Library
+    </a>
   </p>
+
+  @if (loading()) {
+    <!-- Loading -->
+    <div
+      role="status"
+      class="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-16 text-sm text-slate-500"
+    >
+      <span
+        class="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"
+        aria-hidden="true"
+      ></span>
+      Loading document…
+    </div>
+  } @else if (notFound()) {
+    <!-- Not found (404) -->
+    <div
+      class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center"
+    >
+      <p class="text-sm font-medium text-slate-700">Document not found</p>
+      <p class="mt-1 text-sm text-slate-500">
+        This document does not exist or may have been removed.
+      </p>
+      <a
+        routerLink="/library"
+        class="mt-4 inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none"
+      >
+        Back to Library
+      </a>
+    </div>
+  } @else if (error()) {
+    <!-- Error -->
+    <div
+      role="alert"
+      class="rounded-xl border border-red-200 bg-red-50 px-5 py-6 text-sm text-red-800"
+    >
+      <p class="font-medium">Unable to load this document</p>
+      <p class="mt-1 text-red-700">{{ error() }}</p>
+      <button
+        type="button"
+        (click)="loadDetail()"
+        class="mt-3 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 focus:ring-2 focus:ring-red-500/30 focus:outline-none"
+      >
+        Retry
+      </button>
+    </div>
+  } @else if (detail(); as d) {
+    <!-- ====== Header: file name + status + re-process ====== -->
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="min-w-0">
+        <h2 class="truncate text-lg font-semibold text-slate-900" [title]="d.fileName">
+          {{ d.fileName }}
+        </h2>
+        <div class="mt-2 flex items-center gap-2">
+          <span
+            class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset"
+            [class]="statusBadgeClass(d.status)"
+          >
+            {{ d.status }}
+          </span>
+          @if (isNonTerminal()) {
+            <span class="inline-flex items-center gap-1.5 text-xs text-slate-400">
+              <span
+                class="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"
+                aria-hidden="true"
+              ></span>
+              Live — refreshing automatically
+            </span>
+          }
+        </div>
+      </div>
+
+      <div class="flex flex-col items-end gap-1">
+        <button
+          type="button"
+          (click)="reprocess()"
+          [disabled]="!canReprocess()"
+          [attr.aria-busy]="processing()"
+          class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {{ processing() ? 'Re-processing…' : 'Re-process' }}
+        </button>
+        @if (isNonTerminal()) {
+          <span class="text-xs text-slate-400">Disabled while processing</span>
+        }
+      </div>
+    </div>
+
+    @if (processMessage(); as msg) {
+      <p
+        role="status"
+        class="mt-3 rounded-lg px-3 py-2 text-sm"
+        [class]="
+          processIsError()
+            ? 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/20'
+            : 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-600/20'
+        "
+      >
+        {{ msg }}
+      </p>
+    }
+
+    <!-- ====== Failure reason (Failed only) ====== -->
+    @if (isFailed() && d.failureReason) {
+      <div
+        role="alert"
+        class="mt-5 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-800"
+      >
+        <p class="font-medium">Processing failed</p>
+        <p class="mt-1 text-red-700">{{ d.failureReason }}</p>
+      </div>
+    }
+
+    <!-- ====== Metadata ====== -->
+    <dl
+      class="mt-6 grid grid-cols-1 gap-x-8 gap-y-4 rounded-xl border border-slate-200 bg-white p-6 sm:grid-cols-2"
+    >
+      <div>
+        <dt class="text-xs font-semibold tracking-wide text-slate-500 uppercase">File name</dt>
+        <dd class="mt-1 break-words text-sm text-slate-900">{{ d.fileName }}</dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Content type</dt>
+        <dd class="mt-1 text-sm text-slate-900">{{ d.contentType }}</dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Size</dt>
+        <dd class="mt-1 text-sm text-slate-900 tabular-nums">{{ formatSize(d.sizeBytes) }}</dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Extracted chars</dt>
+        <dd class="mt-1 text-sm text-slate-900 tabular-nums">
+          @if (d.charCount !== null) {
+            {{ formatCharCount(d.charCount) }}
+          } @else {
+            <span class="text-slate-400">—</span>
+          }
+        </dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Uploaded</dt>
+        <dd class="mt-1 text-sm text-slate-900">{{ d.uploadedAt | date: 'medium' }}</dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Processed</dt>
+        <dd class="mt-1 text-sm text-slate-900">
+          @if (d.processedAt) {
+            {{ d.processedAt | date: 'medium' }}
+          } @else {
+            <span class="text-slate-400">Not yet processed</span>
+          }
+        </dd>
+      </div>
+    </dl>
+
+    <!-- ====== Extracted-text preview (lazy / expandable) ====== -->
+    <section class="mt-6 rounded-xl border border-slate-200 bg-white">
+      <button
+        type="button"
+        (click)="toggleText()"
+        [attr.aria-expanded]="textExpanded()"
+        class="flex w-full items-center justify-between gap-3 px-6 py-4 text-left focus:ring-2 focus:ring-indigo-500/30 focus:outline-none"
+      >
+        <span class="text-sm font-semibold text-slate-900">Extracted text</span>
+        <span class="text-xs font-medium text-indigo-600">
+          {{ textExpanded() ? 'Hide' : 'Show' }}
+        </span>
+      </button>
+
+      @if (textExpanded()) {
+        <div class="border-t border-slate-200 px-6 py-4">
+          @if (textLoading()) {
+            <div class="flex items-center gap-3 py-6 text-sm text-slate-500" role="status">
+              <span
+                class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"
+                aria-hidden="true"
+              ></span>
+              Loading extracted text…
+            </div>
+          } @else if (textUnavailable(); as unavailable) {
+            <p class="py-4 text-sm text-slate-500">{{ unavailable }}</p>
+          } @else if (text(); as t) {
+            <p class="mb-2 text-xs text-slate-400">
+              {{ formatCharCount(t.charCount) }} characters · extracted
+              {{ t.extractedAt | date: 'medium' }}
+            </p>
+            <pre
+              class="max-h-96 overflow-auto rounded-lg bg-slate-50 p-4 text-xs leading-relaxed whitespace-pre-wrap text-slate-700"
+              >{{ t.content }}</pre
+            >
+          }
+        </div>
+      }
+    </section>
+
+    <!-- ====== Audit timeline (newest-first) ====== -->
+    <section class="mt-6 rounded-xl border border-slate-200 bg-white p-6">
+      <h3 class="text-sm font-semibold text-slate-900">Activity history</h3>
+
+      @if (auditLoading()) {
+        <div class="mt-3 flex items-center gap-3 text-sm text-slate-500" role="status">
+          <span
+            class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"
+            aria-hidden="true"
+          ></span>
+          Loading activity…
+        </div>
+      } @else if (auditError(); as ae) {
+        <div class="mt-3 text-sm text-amber-700">
+          {{ ae }}
+          <button
+            type="button"
+            (click)="loadAudit()"
+            class="ml-2 font-medium text-indigo-600 hover:underline"
+          >
+            Retry
+          </button>
+        </div>
+      } @else if (audit().length === 0) {
+        <p class="mt-3 text-sm text-slate-500">No activity recorded yet.</p>
+      } @else {
+        <ol class="mt-4 space-y-4">
+          @for (entry of audit(); track entry.id) {
+            <li class="flex gap-3">
+              <span
+                class="mt-1.5 h-2 w-2 flex-none rounded-full bg-indigo-400"
+                aria-hidden="true"
+              ></span>
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-slate-900">{{ auditLabel(entry.action) }}</p>
+                <p class="text-xs text-slate-400">{{ entry.createdAt | date: 'medium' }}</p>
+              </div>
+            </li>
+          }
+        </ol>
+      }
+    </section>
+  }
 </app-page-shell>

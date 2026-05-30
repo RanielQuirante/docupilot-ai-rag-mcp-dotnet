@@ -11,6 +11,7 @@ namespace DocuPilot.Models.Contracts;
 /// <param name="Status">Lifecycle status (enum name, e.g. "Uploaded").</param>
 /// <param name="UploadedAt">Upload timestamp (UTC).</param>
 /// <param name="ProcessedAt">Processing-complete timestamp (UTC); null until Phase 3.</param>
+/// <param name="FailureReason">Human-readable failure reason; populated only when <c>Status == Failed</c>, otherwise null.</param>
 public sealed record DocumentListItem(
     Guid Id,
     string FileName,
@@ -18,4 +19,5 @@ public sealed record DocumentListItem(
     long SizeBytes,
     string Status,
     DateTime UploadedAt,
-    DateTime? ProcessedAt);
+    DateTime? ProcessedAt,
+    string? FailureReason);

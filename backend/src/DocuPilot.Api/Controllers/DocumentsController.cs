@@ -15,10 +15,12 @@ namespace DocuPilot.Api.Controllers;
 public sealed class DocumentsController : ControllerBase
 {
     private readonly IDocumentService _documentService;
+    private readonly IDocumentProcessingService _processingService;
 
-    public DocumentsController(IDocumentService documentService)
+    public DocumentsController(IDocumentService documentService, IDocumentProcessingService processingService)
     {
         _documentService = documentService;
+        _processingService = processingService;
     }
 
     /// <summary>
@@ -67,5 +69,65 @@ public sealed class DocumentsController : ControllerBase
     {
         var result = await _documentService.ListAsync(page, pageSize, ct);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Returns the detail view for a single document (metadata, status, failure reason,
+    /// extracted-text summary). <c>404</c> if the id does not exist.
+    /// </summary>
+    [HttpGet("{id:guid}")]
+    [ProducesResponseType(typeof(DocumentDetail), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DocumentDetail>> GetById(Guid id, CancellationToken ct)
+    {
+        var detail = await _documentService.GetDetailAsync(id, ct);
+        return detail is null ? NotFound() : Ok(detail);
+    }
+
+    /// <summary>
+    /// Returns the full extracted plain text for a document. <c>404</c> if the document
+    /// or its extracted text does not exist (e.g. not yet processed, or processing failed).
+    /// </summary>
+    [HttpGet("{id:guid}/text")]
+    [ProducesResponseType(typeof(DocumentTextResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DocumentTextResponse>> GetText(Guid id, CancellationToken ct)
+    {
+        var text = await _documentService.GetTextAsync(id, ct);
+        return text is null ? NotFound() : Ok(text);
+    }
+
+    /// <summary>
+    /// Returns a document's audit timeline, newest-first. Returns <c>200</c> with an empty
+    /// array for a document with no events (or one that does not exist).
+    /// </summary>
+    [HttpGet("{id:guid}/audit")]
+    [ProducesResponseType(typeof(IReadOnlyList<AuditLogEntry>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AuditLogEntry>>> GetAudit(Guid id, CancellationToken ct)
+    {
+        var audit = await _documentService.GetAuditAsync(id, ct);
+        return Ok(audit);
+    }
+
+    /// <summary>
+    /// Manually (re)queues a document for processing — used to retry a <c>Failed</c> doc or
+    /// re-extract a <c>TextExtracted</c>/<c>Uploaded</c> one. Returns <c>202 Accepted</c>
+    /// (the work is queued for the Worker, not done synchronously), <c>404</c> if missing, or
+    /// <c>409 Conflict</c> if the document is already <c>Queued</c>/<c>ExtractingText</c>.
+    /// </summary>
+    [HttpPost("{id:guid}/process")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Process(Guid id, CancellationToken ct)
+    {
+        var result = await _processingService.RequeueAsync(id, ct);
+        return result switch
+        {
+            RequeueResult.Queued => Accepted(),
+            RequeueResult.NotFound => NotFound(),
+            RequeueResult.Conflict => Conflict(),
+            _ => StatusCode(StatusCodes.Status500InternalServerError),
+        };
     }
 }

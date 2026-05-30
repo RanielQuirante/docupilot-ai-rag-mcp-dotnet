@@ -22,6 +22,10 @@
     <ProjectReference Include="..\..\src\DocuPilot.Services\DocuPilot.Services.csproj" />
     <ProjectReference Include="..\..\src\DocuPilot.Models\DocuPilot.Models.csproj" />
     <ProjectReference Include="..\..\src\DocuPilot.Repository\DocuPilot.Repository.csproj" />
+    <!-- Phase 3: unit-test the per-format extractors + the resolver/dispatch service. -->
+    <ProjectReference Include="..\..\src\DocuPilot.Infrastructure\DocuPilot.Infrastructure.csproj" />
+    <!-- Phase 3 (DA-025): unit-test the Worker poller (claim-loop / skip-on-NotClaimed / drain). -->
+    <ProjectReference Include="..\..\src\DocuPilot.Worker\DocuPilot.Worker.csproj" />
   </ItemGroup>
 
 </Project>

@@ -33,6 +33,14 @@ public sealed class Document
     /// <summary>Upload timestamp (UTC), set server-side via <c>TimeProvider</c>.</summary>
     public DateTime UploadedAt { get; set; }
 
-    /// <summary>Processing-complete timestamp (UTC). Always <c>null</c> in Phase 2; set by the Phase-3 worker.</summary>
+    /// <summary>Processing-complete timestamp (UTC). Always <c>null</c> in Phase 2; set by the Phase-3 worker on either terminal state (TextExtracted or Failed).</summary>
     public DateTime? ProcessedAt { get; set; }
+
+    /// <summary>
+    /// Short, human-readable failure summary (e.g. "Extraction timed out after 60s").
+    /// <c>NULL</c> for non-failed documents; set only on <see cref="DocumentStatus.Failed"/>
+    /// and cleared on a successful re-process. Full exception detail lives in
+    /// <c>AuditLogs.DetailsJson</c>, not here (DA-023 §P3.4). Added in Phase 3.
+    /// </summary>
+    public string? FailureReason { get; set; }
 }

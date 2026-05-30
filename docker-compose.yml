@@ -58,6 +58,12 @@ services:
       # File storage: root path points at the docupilot-files volume below.
       FileStorage__RootPath: /app/files
       FileStorage__MaxBytes: "26214400"
+      # Phase-3 extraction limits (DA-024). The API reads Extraction__* for
+      # validation/limits and surfaces them; Worker__* are Worker-only and not
+      # wired here. Defaults come from .env / compose (${VAR:-default}).
+      Extraction__TimeoutSeconds: "${EXTRACTION_TIMEOUT_SECONDS:-60}"
+      Extraction__MaxAttempts: "${EXTRACTION_MAX_ATTEMPTS:-3}"
+      Extraction__MaxTextChars: "${EXTRACTION_MAX_TEXT_CHARS:-5000000}"
     volumes:
       - docupilot-files:/app/files
     depends_on:
@@ -84,6 +90,14 @@ services:
       ConnectionStrings__DocuPilotDb: "Server=sqlserver,1433;Database=DocuPilot;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True"
       FileStorage__RootPath: /app/files
       FileStorage__MaxBytes: "26214400"
+      # Phase-3 pipeline tuning (DA-024). The Worker does the extraction so it
+      # reads BOTH Worker__* (poll loop + stale-claim sweep) and Extraction__*
+      # (timeout / retry budget / char cap). Defaults via .env / compose.
+      Worker__PollIntervalSeconds: "${WORKER_POLL_INTERVAL_SECONDS:-5}"
+      Worker__StuckResetMinutes: "${WORKER_STUCK_RESET_MINUTES:-15}"
+      Extraction__TimeoutSeconds: "${EXTRACTION_TIMEOUT_SECONDS:-60}"
+      Extraction__MaxAttempts: "${EXTRACTION_MAX_ATTEMPTS:-3}"
+      Extraction__MaxTextChars: "${EXTRACTION_MAX_TEXT_CHARS:-5000000}"
     volumes:
       - docupilot-files:/app/files
     depends_on:

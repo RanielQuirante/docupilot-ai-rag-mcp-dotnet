@@ -24,4 +24,23 @@ public interface IDocumentService
     /// are normalized here (page ≥ 1, pageSize within [1, 100]).
     /// </summary>
     Task<PagedResult<DocumentListItem>> ListAsync(int page, int pageSize, CancellationToken ct);
+
+    /// <summary>
+    /// Returns the detail view for a document (<c>GET /api/documents/{id}</c>) — metadata +
+    /// status + failure reason + extracted-text summary (char count / extracted-at). Returns
+    /// <c>null</c> if the document does not exist (controller maps to 404).
+    /// </summary>
+    Task<DocumentDetail?> GetDetailAsync(Guid id, CancellationToken ct);
+
+    /// <summary>
+    /// Returns the full extracted text for a document (<c>GET /api/documents/{id}/text</c>),
+    /// or <c>null</c> if the document or its text row does not exist (controller maps to 404).
+    /// </summary>
+    Task<DocumentTextResponse?> GetTextAsync(Guid id, CancellationToken ct);
+
+    /// <summary>
+    /// Returns a document's audit timeline newest-first (<c>GET /api/documents/{id}/audit</c>).
+    /// Returns an empty list for a document with no events (or one that doesn't exist).
+    /// </summary>
+    Task<IReadOnlyList<AuditLogEntry>> GetAuditAsync(Guid id, CancellationToken ct);
 }

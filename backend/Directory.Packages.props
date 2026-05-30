@@ -22,6 +22,12 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
 
+    <!-- Text extraction (Phase 3 / DA-024). Pure-managed, container-friendly, no native deps.
+         PdfPig (namespace UglyToad.PdfPig, MIT) for selectable-text PDFs; DocumentFormat.OpenXml
+         (Microsoft, MIT) for .docx; .txt uses the built-in StreamReader (no package). -->
+    <PackageVersion Include="PdfPig" Version="0.1.14" />
+    <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
+
     <!-- Logging -->
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />

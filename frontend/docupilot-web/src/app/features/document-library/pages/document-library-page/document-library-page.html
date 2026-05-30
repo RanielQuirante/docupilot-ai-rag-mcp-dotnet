@@ -23,6 +23,31 @@
     Filter applies to the current page only (server-side search arrives in a later phase).
   </p>
 
+  <!-- Live-poll indicator: shown while ≥1 row is still being processed -->
+  @if (hasInFlight()) {
+    <p
+      role="status"
+      class="mb-4 flex items-center gap-2 text-xs font-medium text-amber-700"
+    >
+      <span
+        class="h-2 w-2 animate-pulse rounded-full bg-amber-500"
+        aria-hidden="true"
+      ></span>
+      Live — refreshing processing status every few seconds…
+    </p>
+  }
+
+  <!-- Transient action feedback (e.g. Re-process accepted / already running) -->
+  @if (actionMessage(); as msg) {
+    <div
+      role="status"
+      aria-live="polite"
+      class="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800"
+    >
+      {{ msg }}
+    </div>
+  }
+
   @if (loading()) {
     <!-- Loading state -->
     <div
@@ -96,6 +121,14 @@
                 >
                   {{ doc.status }}
                 </span>
+                @if (doc.status === 'Failed' && doc.failureReason) {
+                  <p
+                    class="mt-1 max-w-xs truncate text-xs text-red-600"
+                    [title]="doc.failureReason"
+                  >
+                    {{ doc.failureReason }}
+                  </p>
+                }
               </td>
               <td class="px-4 py-3 text-slate-500">{{ doc.contentType }}</td>
               <td class="px-4 py-3 text-slate-700 tabular-nums">{{ formatSize(doc.sizeBytes) }}</td>
@@ -105,7 +138,21 @@
               <!-- Classification/Confidence not available until Phase 4 (backend contract omits them) -->
               <td class="px-4 py-3 text-slate-400 italic">Pending</td>
               <td class="px-4 py-3 text-slate-400">—</td>
-              <td class="px-4 py-3 text-right">
+              <td class="px-4 py-3 text-right whitespace-nowrap">
+                @if (canReprocess(doc)) {
+                  <button
+                    type="button"
+                    (click)="reprocess(doc)"
+                    [disabled]="reprocessingId() === doc.id"
+                    class="mr-3 font-medium text-amber-700 hover:text-amber-600 hover:underline focus:ring-2 focus:ring-amber-500/30 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    @if (reprocessingId() === doc.id) {
+                      Re-processing…
+                    } @else {
+                      Re-process
+                    }
+                  </button>
+                }
                 <a
                   [routerLink]="['/documents', doc.id]"
                   class="font-medium text-indigo-600 hover:text-indigo-500 hover:underline"

@@ -20,13 +20,32 @@ public sealed class DocumentServiceTests
     private static readonly DateTimeOffset FixedNow = new(2026, 5, 30, 8, 12, 0, TimeSpan.Zero);
 
     private readonly Mock<IDocumentRepository> _repository = new();
+    private readonly Mock<IDocumentTextRepository> _textRepository = new();
+    private readonly Mock<IAuditRepository> _auditRepository = new();
+    private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IFileStorage> _fileStorage = new();
     private readonly FakeTimeProvider _timeProvider = new(FixedNow);
+
+    public DocumentServiceTests()
+    {
+        // The UoW mock simply runs the staged action (no real DB) so the upload path's
+        // AddTracked + audit writes execute against the mocked repositories.
+        _unitOfWork
+            .Setup(u => u.ExecuteInTransactionAsync(It.IsAny<Func<CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+            .Returns<Func<CancellationToken, Task>, CancellationToken>((action, ct) => action(ct));
+    }
 
     private DocumentService CreateSut(long maxBytes = 25L * 1024 * 1024)
     {
         var options = Options.Create(new DocumentUploadOptions { MaxBytes = maxBytes });
-        return new DocumentService(_repository.Object, _fileStorage.Object, _timeProvider, options);
+        return new DocumentService(
+            _repository.Object,
+            _textRepository.Object,
+            _auditRepository.Object,
+            _unitOfWork.Object,
+            _fileStorage.Object,
+            _timeProvider,
+            options);
     }
 
     private static DocumentUploadInput File(string name, string contentType, long length, string content = "data")
@@ -41,8 +60,14 @@ public sealed class DocumentServiceTests
 
         Document? persisted = null;
         _repository
-            .Setup(r => r.AddAsync(It.IsAny<Document>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.AddTrackedAsync(It.IsAny<Document>(), It.IsAny<CancellationToken>()))
             .Callback<Document, CancellationToken>((d, _) => persisted = d)
+            .Returns(Task.CompletedTask);
+
+        AuditLog? audit = null;
+        _auditRepository
+            .Setup(a => a.AddAsync(It.IsAny<AuditLog>(), It.IsAny<CancellationToken>()))
+            .Callback<AuditLog, CancellationToken>((a, _) => audit = a)
             .Returns(Task.CompletedTask);
 
         var sut = CreateSut();
@@ -52,7 +77,8 @@ public sealed class DocumentServiceTests
         result.Failed.Should().BeEmpty();
 
         persisted.Should().NotBeNull();
-        persisted!.Status.Should().Be(DocumentStatus.Uploaded);
+        // Q1 auto-enqueue: upload goes straight to Queued (not Uploaded).
+        persisted!.Status.Should().Be(DocumentStatus.Queued);
         persisted.UploadedAt.Should().Be(FixedNow.UtcDateTime);
         persisted.UploadedAt.Kind.Should().Be(DateTimeKind.Utc);
         persisted.FilePath.Should().Be("2026/05/30/key.pdf");
@@ -61,13 +87,18 @@ public sealed class DocumentServiceTests
         persisted.Id.Version.Should().Be(7); // app-set Guid.CreateVersion7()
 
         result.Uploaded[0].Id.Should().Be(persisted.Id);
-        result.Uploaded[0].Status.Should().Be("Uploaded");
+        result.Uploaded[0].Status.Should().Be("Queued");
+
+        // A Queued audit row is written in the same (mocked) transaction as the insert.
+        audit.Should().NotBeNull();
+        audit!.Action.Should().Be("Queued");
+        audit.EntityId.Should().Be(persisted.Id);
+        audit.CreatedAt.Should().Be(FixedNow.UtcDateTime);
     }
 
     [Theory]
     [InlineData("note.txt", "text/plain")]
     [InlineData("report.pdf", "application/pdf")]
-    [InlineData("legacy.doc", "application/msword")]
     [InlineData("memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
     public async Task UploadAsync_AllowListedTypes_Accepted(string name, string contentType)
     {
@@ -80,6 +111,18 @@ public sealed class DocumentServiceTests
 
         result.Uploaded.Should().HaveCount(1);
         result.Failed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UploadAsync_LegacyDoc_Rejected()
+    {
+        // PM Q2: legacy .doc was dropped from the allow-list in Phase 3.
+        var sut = CreateSut();
+        var result = await sut.UploadAsync([File("legacy.doc", "application/msword", 50)], CancellationToken.None);
+
+        result.Uploaded.Should().BeEmpty();
+        result.Failed.Should().ContainSingle().Which.Error.Should().Be("Unsupported file type.");
+        _fileStorage.Verify(s => s.SaveAsync(It.IsAny<Stream>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -199,9 +242,38 @@ public sealed class DocumentServiceTests
         result.Items.Should().ContainSingle();
         result.Items[0].Status.Should().Be("Uploaded");
         result.Items[0].FileName.Should().Be("a.pdf");
+        // A non-Failed doc carries no failure reason.
+        result.Items[0].FailureReason.Should().BeNull();
         // DocumentListItem must not expose the internal storage key.
         typeof(DocuPilot.Models.Contracts.DocumentListItem)
             .GetProperty("FilePath").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ListAsync_FailedDocument_SurfacesFailureReason()
+    {
+        var doc = new Document
+        {
+            Id = Guid.CreateVersion7(),
+            FileName = "broken.pdf",
+            ContentType = "application/pdf",
+            FilePath = "2026/05/30/broken.pdf",
+            SizeBytes = 42,
+            Status = DocumentStatus.Failed,
+            UploadedAt = FixedNow.UtcDateTime,
+            ProcessedAt = FixedNow.UtcDateTime,
+            FailureReason = "No extractable text found.",
+        };
+        _repository
+            .Setup(r => r.ListAsync(1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<Document>)[doc], 1L));
+
+        var sut = CreateSut();
+        var result = await sut.ListAsync(1, 20, CancellationToken.None);
+
+        result.Items.Should().ContainSingle();
+        result.Items[0].Status.Should().Be("Failed");
+        result.Items[0].FailureReason.Should().Be("No extractable text found.");
     }
 
     /// <summary>Minimal fixed-time TimeProvider for deterministic UploadedAt assertions.</summary>

@@ -18,6 +18,10 @@ public sealed class DocuPilotDbContext : DbContext
 
     public DbSet<Document> Documents => Set<Document>();
 
+    public DbSet<DocumentText> DocumentTexts => Set<DocumentText>();
+
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

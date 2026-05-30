@@ -18,6 +18,13 @@ public static class DependencyInjection
         // Phase 2: document upload + library use case. Scoped to align with the
         // scoped repository / DbContext it depends on.
         services.AddScoped<IDocumentService, DocumentService>();
+
+        // Phase 3: the reusable processing orchestrator (state machine: claim → extract →
+        // persist text + advance status + audit, transactionally). The Worker host (DA-025)
+        // resolves the SAME registration — keep it in this shared extension so the two
+        // composition roots can't drift (lessons.md DA-021).
+        services.AddScoped<IDocumentProcessingService, DocumentProcessingService>();
+
         return services;
     }
 }

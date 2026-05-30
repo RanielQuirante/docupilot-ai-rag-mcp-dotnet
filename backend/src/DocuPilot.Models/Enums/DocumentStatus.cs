@@ -17,6 +17,9 @@ public enum DocumentStatus
     /// <summary>Text extraction in progress (Phase 3+).</summary>
     ExtractingText,
 
+    /// <summary>Text successfully extracted and persisted — Phase-3 terminal success; the hand-off marker Phase 4 claims on (Phase 3+).</summary>
+    TextExtracted,
+
     /// <summary>Document classification in progress (Phase 4+).</summary>
     Classifying,
 

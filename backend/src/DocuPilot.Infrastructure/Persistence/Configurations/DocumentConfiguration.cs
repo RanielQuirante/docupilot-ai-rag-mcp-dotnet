@@ -48,11 +48,21 @@ public sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
 
         builder.Property(d => d.ProcessedAt);
 
-        // The ONLY non-clustered index in Phase 2: backs the newest-first paged list
-        // query. DESC matches the ORDER BY so the engine can seek the top page.
-        // NO index on Status (deferred to Phase 3) — DA-015 §3.1, constraint #6.
+        // Short human-readable failure summary (NVARCHAR(1000) NULL). Added in Phase 3
+        // (DA-023 §P3.4). Nullable — no IsRequired().
+        builder.Property(d => d.FailureReason)
+            .HasMaxLength(1000);
+
+        // Backs the newest-first paged list query. DESC matches the ORDER BY so the
+        // engine can seek the top page.
         builder.HasIndex(d => d.UploadedAt)
             .IsDescending()
             .HasDatabaseName("IX_Documents_UploadedAt");
+
+        // The DA-015-deferred Status index, landed in Phase 3 (DA-023 §P3.4): backs the
+        // Worker poll's WHERE Status = 'Queued' claim-scan and Phase-4's future
+        // WHERE Status = 'TextExtracted'.
+        builder.HasIndex(d => d.Status)
+            .HasDatabaseName("IX_Documents_Status");
     }
 }

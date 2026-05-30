@@ -1,3 +1,4 @@
+using System.Text.Json;
 using DocuPilot.Models.Contracts;
 using DocuPilot.Models.Entities;
 using DocuPilot.Models.Enums;
@@ -22,28 +23,42 @@ public sealed class DocumentService : IDocumentService
     private const int MaxPageSize = 100;
     private const int DefaultPageSize = 20;
 
-    /// <summary>Allowed extension → set of acceptable content types (spec §5.1).</summary>
+    private const string DocumentEntityName = "Document";
+
+    /// <summary>
+    /// Allowed extension → set of acceptable content types. Phase 3 (PM Q2) DROPS legacy
+    /// <c>.doc</c> — there is no clean pure-managed in-container extractor for binary OLE2.
+    /// Allow-list is now <c>.pdf / .docx / .txt</c>.
+    /// </summary>
     private static readonly IReadOnlyDictionary<string, string[]> AllowList =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
             [".pdf"] = ["application/pdf"],
-            [".doc"] = ["application/msword"],
             [".docx"] = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
             [".txt"] = ["text/plain"],
         };
 
     private readonly IDocumentRepository _repository;
+    private readonly IDocumentTextRepository _textRepository;
+    private readonly IAuditRepository _auditRepository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IFileStorage _fileStorage;
     private readonly TimeProvider _timeProvider;
     private readonly DocumentUploadOptions _options;
 
     public DocumentService(
         IDocumentRepository repository,
+        IDocumentTextRepository textRepository,
+        IAuditRepository auditRepository,
+        IUnitOfWork unitOfWork,
         IFileStorage fileStorage,
         TimeProvider timeProvider,
         IOptions<DocumentUploadOptions> options)
     {
         _repository = repository;
+        _textRepository = textRepository;
+        _auditRepository = auditRepository;
+        _unitOfWork = unitOfWork;
         _fileStorage = fileStorage;
         _timeProvider = timeProvider;
         _options = options.Value;
@@ -71,6 +86,7 @@ public sealed class DocumentService : IDocumentService
                 storageKey = await _fileStorage.SaveAsync(stream, id, file.FileName, ct);
             }
 
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
             var document = new Document
             {
                 Id = id,
@@ -78,12 +94,28 @@ public sealed class DocumentService : IDocumentService
                 ContentType = file.ContentType,
                 FilePath = storageKey,
                 SizeBytes = file.Length,
-                Status = DocumentStatus.Uploaded,
-                UploadedAt = _timeProvider.GetUtcNow().UtcDateTime,
+                // Q1 auto-enqueue: upload goes straight to Queued so the pipeline auto-runs.
+                // "upload" and "enqueue" are a single transaction (no lost-enqueue window).
+                Status = DocumentStatus.Queued,
+                UploadedAt = now,
                 ProcessedAt = null,
+                FailureReason = null,
             };
 
-            await _repository.AddAsync(document, ct);
+            // Persist the row AND its first lifecycle audit event atomically (DA-023 §P3.8 #6).
+            await _unitOfWork.ExecuteInTransactionAsync(async innerCt =>
+            {
+                await _repository.AddTrackedAsync(document, innerCt);
+                await _auditRepository.AddAsync(new AuditLog
+                {
+                    Id = Guid.CreateVersion7(),
+                    EntityName = DocumentEntityName,
+                    EntityId = document.Id,
+                    Action = AuditAction.Queued.ToString(),
+                    DetailsJson = JsonSerializer.Serialize(new { toStatus = nameof(DocumentStatus.Queued) }),
+                    CreatedAt = now,
+                }, innerCt);
+            }, ct);
 
             uploaded.Add(new UploadedDocument(
                 document.Id,
@@ -123,10 +155,55 @@ public sealed class DocumentService : IDocumentService
                 d.SizeBytes,
                 d.Status.ToString(),
                 d.UploadedAt,
-                d.ProcessedAt))
+                d.ProcessedAt,
+                d.FailureReason))
             .ToList();
 
         return new PagedResult<DocumentListItem>(dtos, page, pageSize, totalCount);
+    }
+
+    public async Task<DocumentDetail?> GetDetailAsync(Guid id, CancellationToken ct)
+    {
+        var document = await _repository.GetByIdAsync(id, ct);
+        if (document is null)
+        {
+            return null;
+        }
+
+        // Text summary (char count / extracted-at) is present only once text has been
+        // extracted; the full LOB is fetched separately via GetTextAsync.
+        var text = await _textRepository.GetByDocumentIdAsync(id, ct);
+
+        return new DocumentDetail(
+            document.Id,
+            document.FileName,
+            document.ContentType,
+            document.SizeBytes,
+            document.Status.ToString(),
+            document.UploadedAt,
+            document.ProcessedAt,
+            document.FailureReason,
+            text?.CharCount,
+            text?.ExtractedAt);
+    }
+
+    public async Task<DocumentTextResponse?> GetTextAsync(Guid id, CancellationToken ct)
+    {
+        var text = await _textRepository.GetByDocumentIdAsync(id, ct);
+        if (text is null)
+        {
+            return null;
+        }
+
+        return new DocumentTextResponse(text.DocumentId, text.Content, text.CharCount, text.ExtractedAt);
+    }
+
+    public async Task<IReadOnlyList<AuditLogEntry>> GetAuditAsync(Guid id, CancellationToken ct)
+    {
+        var rows = await _auditRepository.ListByEntityAsync(id, ct);
+        return rows
+            .Select(a => new AuditLogEntry(a.Id, a.Action, a.DetailsJson, a.CreatedAt))
+            .ToList();
     }
 
     /// <summary>
