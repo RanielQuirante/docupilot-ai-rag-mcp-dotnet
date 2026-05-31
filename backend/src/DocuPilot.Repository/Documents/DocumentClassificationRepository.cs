@@ -1,4 +1,5 @@
 using DocuPilot.Models.Entities;
+using DocuPilot.Models.Enums;
 using DocuPilot.Repository.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
@@ -58,5 +59,18 @@ public sealed class DocumentClassificationRepository : IDocumentClassificationRe
             .AsNoTracking()
             .Where(c => documentIds.Contains(c.DocumentId))
             .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyDictionary<DocumentCategory, int>> CountByCategoryAsync(CancellationToken ct)
+    {
+        // Single GROUP BY Classification aggregate — no rows materialized, server-side COUNT
+        // (DA-058 dashboard stats). Categories with zero classified rows are absent.
+        var grouped = await _dbContext.Set<DocumentClassification>()
+            .AsNoTracking()
+            .GroupBy(c => c.Classification)
+            .Select(g => new { Category = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        return grouped.ToDictionary(x => x.Category, x => x.Count);
     }
 }

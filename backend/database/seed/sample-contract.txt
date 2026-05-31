@@ -1,0 +1,55 @@
+MASTER SERVICE AGREEMENT
+
+Agreement No.: MSA-2024-0417
+Effective Date: July 1, 2024
+This Master Service Agreement ("Agreement") is entered into between:
+
+  Client:   Northwind Manufacturing, Inc.
+            1200 Industrial Parkway, Columbus, OH 43215
+  Provider: Brightline Cloud Solutions, LLC
+            55 Market Street, Suite 900, San Francisco, CA 94105
+
+1. SCOPE OF SERVICES
+   The Provider shall furnish managed cloud-hosting, monitoring, and 24x7
+   technical support services for the Client's enterprise document platform,
+   as further described in the attached Statement of Work (SOW-1).
+
+2. TERM AND EXPIRATION
+   This Agreement commences on the Effective Date and shall remain valid
+   until June 30, 2026 (the "Expiration Date"), unless earlier terminated
+   in accordance with Section 6. The initial term is twenty-four (24) months.
+
+3. RENEWAL
+   This Agreement will NOT automatically renew. To continue services beyond
+   the Expiration Date, the parties must execute a written renewal at least
+   sixty (60) days prior to expiration. Absent a signed renewal, all services
+   cease on the Expiration Date. The renewal deadline for the current term is
+   therefore May 1, 2026.
+
+4. FEES AND PAYMENT
+   The Client shall pay a recurring service fee of USD $18,500 per month,
+   invoiced monthly and due net thirty (30) days from the invoice date.
+
+5. CONFIDENTIALITY
+   Each party shall protect the other's Confidential Information using no less
+   than reasonable care and shall not disclose it to third parties without
+   prior written consent.
+
+6. TERMINATION
+   Either party may terminate this Agreement for material breach upon thirty
+   (30) days' written notice if the breach remains uncured. Upon termination,
+   the Provider shall return or securely destroy all Client data within
+   fifteen (15) days.
+
+7. GOVERNING LAW
+   This Agreement is governed by the laws of the State of Delaware.
+
+8. SIGNATURES
+
+   For Northwind Manufacturing, Inc.        For Brightline Cloud Solutions, LLC
+   __________________________               __________________________
+   Patricia Hale, VP Operations             Daniel Reyes, Director of Sales
+   Date: June 18, 2024                       Date: June 20, 2024
+
+NOTE: This is a legally significant agreement approaching its expiration and
+renewal deadline. Legal review is recommended prior to the renewal cutoff.

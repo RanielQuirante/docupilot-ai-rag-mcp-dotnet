@@ -28,6 +28,8 @@
     <ProjectReference Include="..\..\src\DocuPilot.Infrastructure\DocuPilot.Infrastructure.csproj" />
     <!-- Phase 3 (DA-025): unit-test the Worker poller (claim-loop / skip-on-NotClaimed / drain). -->
     <ProjectReference Include="..\..\src\DocuPilot.Worker\DocuPilot.Worker.csproj" />
+    <!-- Phase 9 (DA-059): unit-test the WorkflowController status-code mapping (DA-057-D1 404-not-400). -->
+    <ProjectReference Include="..\..\src\DocuPilot.Api\DocuPilot.Api.csproj" />
   </ItemGroup>
 
 </Project>

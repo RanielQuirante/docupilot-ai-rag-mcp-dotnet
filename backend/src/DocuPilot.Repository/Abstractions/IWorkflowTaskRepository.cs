@@ -37,4 +37,11 @@ public interface IWorkflowTaskRepository
     /// soft duplicate guard (PM Q7; not used by default). No-tracking.
     /// </summary>
     Task<int> CountOpenByDocumentAsync(Guid documentId, string taskType, CancellationToken ct);
+
+    /// <summary>
+    /// Dashboard aggregate (Phase 9, DA-058): a single server-side <c>COUNT</c> of tasks in the given
+    /// <paramref name="status"/> (the dashboard passes <c>Open</c>). No row materialization; backed by
+    /// <c>IX_WorkflowTasks_Status</c>. No-tracking.
+    /// </summary>
+    Task<int> CountByStatusAsync(WorkflowTaskStatus status, CancellationToken ct);
 }

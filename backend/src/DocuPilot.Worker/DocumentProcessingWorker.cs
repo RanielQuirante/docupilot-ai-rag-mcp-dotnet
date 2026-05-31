@@ -58,6 +58,7 @@ public sealed class DocumentProcessingWorker : BackgroundService
     private const int MaxBatchPerTick = 25;
 
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IDatabaseReadinessProbe _readinessProbe;
     private readonly WorkerOptions _options;
     private readonly ILogger<DocumentProcessingWorker> _logger;
 
@@ -81,10 +82,12 @@ public sealed class DocumentProcessingWorker : BackgroundService
 
     public DocumentProcessingWorker(
         IServiceScopeFactory scopeFactory,
+        IDatabaseReadinessProbe readinessProbe,
         IOptions<WorkerOptions> options,
         ILogger<DocumentProcessingWorker> logger)
     {
         _scopeFactory = scopeFactory;
+        _readinessProbe = readinessProbe;
         _options = options.Value;
         _logger = logger;
 
@@ -99,6 +102,18 @@ public sealed class DocumentProcessingWorker : BackgroundService
         _logger.LogInformation(
             "Document-processing worker started. Poll interval: {PollSeconds}s; stale-claim threshold: {StaleMinutes}m; transient backoff: {BackoffTicks} ticks.",
             _pollInterval.TotalSeconds, _staleThreshold.TotalMinutes, _transientBackoffTicks);
+
+        // DA-044-D1: gate the FIRST real tick on a migrated DB. On a fresh stack the API applies EF
+        // migrations on startup; without this wait the poll loop ticks immediately and its first
+        // queries hit not-yet-created tables, logging transient `Invalid object name 'AuditLogs'`.
+        // The Worker does NOT run migrations (the API owns them) — it WAITS until they are applied.
+        // A never-ready DB keeps retrying (never crashes); host shutdown during the wait returns false.
+        var gate = new DatabaseReadinessGate(_readinessProbe, _logger);
+        if (!await gate.WaitUntilReadyAsync(stoppingToken))
+        {
+            _logger.LogInformation("Document-processing worker stopping (cancelled before the database was ready).");
+            return;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {

@@ -1,4 +1,6 @@
 using DocuPilot.Services.Abstractions;
+using DocuPilot.Services.Audit;
+using DocuPilot.Services.Dashboard;
 using DocuPilot.Services.Documents;
 using DocuPilot.Services.Rag;
 using DocuPilot.Services.Search;
@@ -78,6 +80,12 @@ public static class DependencyInjection
 
         // Phase 8: the CONSTRAINED agent pipeline (recommend → create, both dispatched + audited).
         services.AddScoped<IAgentPipeline, AgentPipeline>();
+
+        // Phase 9 (DA-058): the two additive READ-ONLY services. Dashboard stats composes three
+        // aggregate repo queries; the audit-log list pages the global AuditLogs table. Both scoped to
+        // align with the scoped repositories/DbContext. No audit write (pure reads).
+        services.AddScoped<IDashboardService, DashboardService>();
+        services.AddScoped<IAuditLogService, AuditLogService>();
 
         return services;
     }

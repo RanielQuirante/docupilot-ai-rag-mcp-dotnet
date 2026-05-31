@@ -1,4 +1,5 @@
 using DocuPilot.Models.Entities;
+using DocuPilot.Models.Enums;
 
 namespace DocuPilot.Repository.Abstractions;
 
@@ -27,4 +28,12 @@ public interface IDocumentClassificationRepository
     /// absent from the result.
     /// </summary>
     Task<IReadOnlyList<DocumentClassification>> GetByDocumentIdsAsync(IReadOnlyCollection<Guid> documentIds, CancellationToken ct);
+
+    /// <summary>
+    /// Dashboard aggregate (Phase 9, DA-058): a single <c>GROUP BY Classification</c> over
+    /// <c>DocumentClassifications</c> returning the document count per <see cref="DocumentCategory"/>
+    /// that has at least one classified row. Read-only / no row materialization (no N+1). Categories
+    /// with zero classified documents are absent from the dictionary.
+    /// </summary>
+    Task<IReadOnlyDictionary<DocumentCategory, int>> CountByCategoryAsync(CancellationToken ct);
 }
