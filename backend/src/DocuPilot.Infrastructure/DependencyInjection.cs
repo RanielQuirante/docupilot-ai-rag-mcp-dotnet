@@ -8,6 +8,7 @@ using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
 using DocuPilot.Services.Rag;
 using DocuPilot.Services.Search;
+using DocuPilot.Services.Workflow;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,6 +72,11 @@ public static class DependencyInjection
         // does NOT do RAG). All keys have code defaults, so ask works with ZERO env changes (DevOps
         // DA-052 is optional, docs-only).
         services.Configure<RagOptions>(configuration.GetSection(RagOptions.SectionName));
+
+        // Phase 8: workflow / tool-layer bounds — env keys Workflow__* (DA-054). API-only (the Worker
+        // does NOT do workflow/tools). All keys have code defaults, so the feature works with ZERO env
+        // changes (DevOps DA-056 is optional, docs-only).
+        services.Configure<WorkflowOptions>(configuration.GetSection(WorkflowOptions.SectionName));
 
         // System clock for testable timestamp generation. LocalFileStorage (and other
         // Infrastructure timestamp consumers) depend on TimeProvider, so it MUST be

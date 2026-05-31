@@ -23,6 +23,8 @@
     <EmbeddedResource Include="Llm\Prompts\MetadataPrompt.txt" />
     <!-- Phase 7 (DA-049): the editable RAG answer prompt (spec §13.3), loaded by PromptProvider. -->
     <EmbeddedResource Include="Llm\Prompts\RagAnswerPrompt.txt" />
+    <!-- Phase 8 (DA-054): the editable workflow-recommendation prompt (spec §13.4), loaded by PromptProvider. -->
+    <EmbeddedResource Include="Llm\Prompts\WorkflowRecommendationPrompt.txt" />
   </ItemGroup>
 
   <ItemGroup>

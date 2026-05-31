@@ -66,6 +66,7 @@ Once the stack is up, these endpoints are published on `localhost` (ports are ov
 | API health | http://localhost:5010/health | Liveness JSON (`status: healthy`) |
 | API search | http://localhost:5010/api/search | Semantic search (`POST`, NL query → ranked docs; Phase 6) |
 | API ask | http://localhost:5010/api/ask | RAG question-answering (`POST`, NL question → grounded answer + citations; Phase 7) |
+| API workflows | http://localhost:5010/api/workflows/recommend | AI workflow recommendation + controlled tools (`/api/workflow-tasks`, `/api/tools`, `/api/agent/recommend-and-create`; Phase 8) |
 | Web | http://localhost:4210 | Angular SPA (served by NGINX) |
 | SQL Server | localhost:1433 | Relational metadata store (SA login) |
 | Qdrant HTTP | http://localhost:6333 | Vector DB REST API + dashboard |
@@ -310,6 +311,25 @@ Phase-5 embedder, and the Phase-5/6 Qdrant vectors. Its tuning keys (`Rag__TopK`
 endpoint works out-of-the-box with zero `.env` changes**; they are wired to
 `docupilot-api` (not the Worker) and are optionally overridable via the `RAG_*`
 variables documented in `.env.example`.
+
+**MCP-style workflow tools (Phase 8 — `POST /api/workflows/recommend`, `/api/workflow-tasks`, `GET /api/tools`, `POST /api/agent/recommend-and-create`).**
+Phase 8 adds an AI workflow-recommendation plus a controlled, audited MCP-style
+tool layer **on the API only**. `POST /api/workflows/recommend` makes one
+JSON-mode call to the same Phase-4 chat LLM (`llama3.2:3b`) over a document's
+classification/metadata/text to suggest a workflow, next step, priority, and
+reason. The AI **never touches the database directly** — the only mutation path
+is the validated, audited `create_workflow_task` tool (`POST /api/workflow-tasks`),
+which is also driven by the fixed `recommend → create` pipeline at
+`POST /api/agent/recommend-and-create`; `GET /api/tools` introspects the tool
+catalogue, and `GET /api/workflow-tasks` / `POST /api/workflow-tasks/{id}/complete`
+list and close tasks. It adds **no new image, model, port, or volume** — it
+reuses the Phase-4 chat LLM, the embedder, and Qdrant; the new `WorkflowTasks`
+table is created via the **existing API startup migrate path** (no compose
+change). Its tuning keys (`Workflow__DefaultPriority`,
+`Workflow__RecommendTextMaxChars`, `Workflow__AllowDuplicateTasks`) are **all
+code-defaulted, so the endpoints work out-of-the-box with zero `.env` changes**;
+they are wired to `docupilot-api` (not the Worker) and are optionally overridable
+via the `WORKFLOW_*` variables documented in `.env.example`.
 
 **First `docker compose up --build` looks hung.**
 It is almost certainly pulling base images (SQL Server and Ollama are the big ones). Run `docker compose logs -f` or watch Docker Desktop to confirm download progress. The pull is a one-time cost.

@@ -2,6 +2,8 @@ using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
 using DocuPilot.Services.Rag;
 using DocuPilot.Services.Search;
+using DocuPilot.Services.Tools;
+using DocuPilot.Services.Workflow;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DocuPilot.Services;
@@ -55,6 +57,27 @@ public static class DependencyInjection
         // IVectorStore / ILlmClient / IPromptProvider / repositories. Scoped to align with the scoped
         // repositories/DbContext. API-only — the Worker does NOT do RAG (ADR §7).
         services.AddScoped<IRagService, RagService>();
+
+        // Phase 8 (DA-054): the workflow orchestrator (recommend [LLM JSON-mode] / create [validated
+        // audited write] / list / complete). The single validated business layer the tools AND the
+        // controllers call. API-only (the Worker does NOT do workflow). Scoped to align with the
+        // scoped repositories/DbContext.
+        services.AddScoped<IWorkflowService, WorkflowService>();
+
+        // Phase 8: the MCP-style tool layer (ADR §2). The registry is a singleton (composed once from
+        // the registered ITool set); the dispatcher is scoped (it audits via the scoped IUnitOfWork /
+        // IAuditRepository). Each ITool is scoped (its handler delegates to scoped services/repos).
+        services.AddScoped<ITool, SearchDocumentsTool>();
+        services.AddScoped<ITool, GetDocumentByIdTool>();
+        services.AddScoped<ITool, GetPendingDocumentsTool>();
+        services.AddScoped<ITool, ExtractMetadataTool>();
+        services.AddScoped<ITool, RecommendWorkflowTool>();
+        services.AddScoped<ITool, CreateWorkflowTaskTool>();
+        services.AddScoped<IToolRegistry, ToolRegistry>();
+        services.AddScoped<IToolDispatcher, ToolDispatcher>();
+
+        // Phase 8: the CONSTRAINED agent pipeline (recommend → create, both dispatched + audited).
+        services.AddScoped<IAgentPipeline, AgentPipeline>();
 
         return services;
     }

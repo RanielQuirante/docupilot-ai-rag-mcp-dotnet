@@ -131,6 +131,23 @@ services:
       Rag__PerChunkMaxChars: "${RAG_PER_CHUNK_MAX_CHARS:-2000}"
       Rag__SnippetMaxChars: "${RAG_SNIPPET_MAX_CHARS:-300}"
       Rag__MinScore: "${RAG_MIN_SCORE:-0.25}"
+      # Phase-8 MCP-Style Workflow Tools config (DA-054/DA-056). API-ONLY: the
+      # workflow/recommend/tools/agent endpoints (POST /api/workflows/recommend,
+      # /api/workflow-tasks, GET /api/tools, POST /api/agent/recommend-and-create)
+      # live on the API; the Worker does NOT run workflow tools, so these are
+      # deliberately NOT wired to docupilot-worker. FROZEN DA-054 contract keys,
+      # ALL code-defaulted (the endpoints work with ZERO env changes) — wired here
+      # only so they're overridable via .env, same ${VAR:-default} pattern as the
+      # Search__*/Rag__* blocks. Phase 8 adds NO new image, model, port, or volume
+      # (it reuses llama3.2:3b + the embedder + Qdrant). The new WorkflowTasks
+      # table is created via the existing API startup migrate path (no compose
+      # change). DefaultPriority = the fallback when recommend/create omits/off-
+      # lists priority; RecommendTextMaxChars = the document-text head budget fed
+      # to the recommend LLM call; AllowDuplicateTasks = whether the soft
+      # duplicate-open guard is off (true = duplicates allowed + audited).
+      Workflow__DefaultPriority: "${WORKFLOW_DEFAULT_PRIORITY:-Normal}"
+      Workflow__RecommendTextMaxChars: "${WORKFLOW_RECOMMEND_TEXT_MAX_CHARS:-4000}"
+      Workflow__AllowDuplicateTasks: "${WORKFLOW_ALLOW_DUPLICATE_TASKS:-true}"
     volumes:
       - docupilot-files:/app/files
     depends_on:

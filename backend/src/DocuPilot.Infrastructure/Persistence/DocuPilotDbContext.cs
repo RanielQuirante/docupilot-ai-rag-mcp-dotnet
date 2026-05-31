@@ -28,6 +28,8 @@ public sealed class DocuPilotDbContext : DbContext
 
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
 
+    public DbSet<WorkflowTask> WorkflowTasks => Set<WorkflowTask>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
