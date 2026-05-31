@@ -65,6 +65,7 @@ Once the stack is up, these endpoints are published on `localhost` (ports are ov
 | API Swagger | http://localhost:5010/swagger | OpenAPI UI (Development only) |
 | API health | http://localhost:5010/health | Liveness JSON (`status: healthy`) |
 | API search | http://localhost:5010/api/search | Semantic search (`POST`, NL query → ranked docs; Phase 6) |
+| API ask | http://localhost:5010/api/ask | RAG question-answering (`POST`, NL question → grounded answer + citations; Phase 7) |
 | Web | http://localhost:4210 | Angular SPA (served by NGINX) |
 | SQL Server | localhost:1433 | Relational metadata store (SA login) |
 | Qdrant HTTP | http://localhost:6333 | Vector DB REST API + dashboard |
@@ -292,6 +293,23 @@ keys (`Search__DefaultLimit`, `Search__MaxLimit`, `Search__ChunkOverFetchFactor`
 **all code-defaulted, so search works out-of-the-box with zero `.env` changes**;
 they are wired to `docupilot-api` (not the Worker) and are optionally overridable
 via the `SEARCH_*` variables documented in `.env.example`.
+
+**RAG question-answering (Phase 7 — `POST /api/ask`).**
+Phase 7 adds a document-grounded question-answering endpoint **on the API only**
+(`POST /api/ask`): it embeds the natural-language question with the same Phase-5
+embedding model, retrieves the most relevant chunks from the Qdrant vectors, and
+asks the same Phase-4 chat LLM (`llama3.2:3b`) to answer **only** from that
+context — returning the grounded answer plus ranked source citations. Grounding
+and the not-found behavior are **built in**: if nothing relevant is found, the
+endpoint returns `200` with `answerFound: false` and a canned "I could not find
+enough information…" answer (no fabricated content). It adds **no new image,
+model, port, or Qdrant/SQL change** — it reuses the Phase-4 chat LLM, the
+Phase-5 embedder, and the Phase-5/6 Qdrant vectors. Its tuning keys (`Rag__TopK`,
+`Rag__MaxTopK`, `Rag__ContextMaxChars`, `Rag__PerChunkMaxChars`,
+`Rag__SnippetMaxChars`, `Rag__MinScore`) are **all code-defaulted, so the
+endpoint works out-of-the-box with zero `.env` changes**; they are wired to
+`docupilot-api` (not the Worker) and are optionally overridable via the `RAG_*`
+variables documented in `.env.example`.
 
 **First `docker compose up --build` looks hung.**
 It is almost certainly pulling base images (SQL Server and Ollama are the big ones). Run `docker compose logs -f` or watch Docker Desktop to confirm download progress. The pull is a one-time cost.

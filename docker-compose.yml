@@ -114,6 +114,23 @@ services:
       Search__MaxChunkFetch: "${SEARCH_MAX_CHUNK_FETCH:-200}"
       Search__MatchedTextMaxChars: "${SEARCH_MATCHED_TEXT_MAX_CHARS:-300}"
       Search__MinScore: "${SEARCH_MIN_SCORE:-0}"
+      # Phase-7 RAG Question Answering config (DA-049/DA-052). API-ONLY: the ask
+      # endpoint (POST /api/ask) lives on the API; the Worker does NOT do RAG, so
+      # these are deliberately NOT wired to docupilot-worker. FROZEN DA-049
+      # contract keys, ALL code-defaulted (ask works with ZERO env changes) —
+      # wired here only so they're overridable via .env, same ${VAR:-default}
+      # pattern as the Search__*/Embedding__* blocks. Phase 7 adds NO new image,
+      # model, port, or Qdrant/SQL change (it reuses the Phase-4 chat LLM, the
+      # Phase-5 embedder, and the Phase-5/6 Qdrant vectors). Grounding +
+      # not-found short-circuit are built into the backend (not configurable).
+      # MinScore is the pre-LLM grounding floor: if every hit < this, the ask
+      # short-circuits to the canned not-found answer WITHOUT calling the LLM.
+      Rag__TopK: "${RAG_TOP_K:-6}"
+      Rag__MaxTopK: "${RAG_MAX_TOP_K:-12}"
+      Rag__ContextMaxChars: "${RAG_CONTEXT_MAX_CHARS:-6000}"
+      Rag__PerChunkMaxChars: "${RAG_PER_CHUNK_MAX_CHARS:-2000}"
+      Rag__SnippetMaxChars: "${RAG_SNIPPET_MAX_CHARS:-300}"
+      Rag__MinScore: "${RAG_MIN_SCORE:-0.25}"
     volumes:
       - docupilot-files:/app/files
     depends_on:

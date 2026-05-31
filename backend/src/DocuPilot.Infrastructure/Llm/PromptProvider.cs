@@ -19,8 +19,23 @@ public sealed class PromptProvider : IPromptProvider
     private static readonly string MetadataTemplate =
         LoadResource("DocuPilot.Infrastructure.Llm.Prompts.MetadataPrompt.txt");
 
+    private static readonly string RagAnswerTemplate =
+        LoadResource("DocuPilot.Infrastructure.Llm.Prompts.RagAnswerPrompt.txt");
+
     private static readonly string AllowedCategoriesList =
         string.Join("\n", DocumentCategoryNames.DisplayNames.Select(name => $"- {name}"));
+
+    // The MANDATORY grounding system instruction (spec §5.9), used VERBATIM as the LLM System message
+    // on every RAG ask. NOT loaded from a resource — kept inline as the authoritative grounding
+    // contract so it cannot be edited away by accident (the answer's correctness depends on it).
+    private const string RagGroundingSystem =
+        "Answer only using the provided document context. "
+        + "If the answer is not found in the context, say: "
+        + "\"I could not find enough information in the uploaded documents.\"";
+
+    // The EXACT canned not-found phrase (spec §5.9 / §13.3) — returned by the short-circuit and
+    // detected (case-insensitive) in the model output.
+    private const string RagNotFound = "I could not find enough information in the uploaded documents.";
 
     public string BuildClassificationPrompt(string documentText) =>
         ClassificationTemplate
@@ -31,6 +46,15 @@ public sealed class PromptProvider : IPromptProvider
         MetadataTemplate
             .Replace("{{classification}}", classification)
             .Replace("{{documentText}}", documentText);
+
+    public string BuildRagPrompt(string question, string contextBlock) =>
+        RagAnswerTemplate
+            .Replace("{{question}}", question)
+            .Replace("{{retrievedChunks}}", contextBlock);
+
+    public string RagGroundingSystemPrompt => RagGroundingSystem;
+
+    public string RagNotFoundAnswer => RagNotFound;
 
     private static string LoadResource(string resourceName)
     {

@@ -20,4 +20,28 @@ public interface IPromptProvider
     /// <c>{{classification}}</c>) and the (truncated) document text.
     /// </summary>
     string BuildMetadataPrompt(string classification, string documentText);
+
+    /// <summary>
+    /// ADDITIVE (Phase-7 DA-049): builds the RAG answer prompt (§13.3), injecting the user's
+    /// <c>{{question}}</c> and the assembled, source-labeled <c>{{retrievedChunks}}</c> context block.
+    /// The mandatory grounding system instruction (§5.9) is exposed separately via
+    /// <see cref="RagGroundingSystemPrompt"/> and passed as the LLM <c>System</c> message; this method
+    /// builds the user-side prompt only. The RAG answer is PROSE (the orchestrator calls the LLM with
+    /// <c>JsonMode=false</c>), unlike the JSON-mode classification/metadata prompts.
+    /// </summary>
+    string BuildRagPrompt(string question, string contextBlock);
+
+    /// <summary>
+    /// ADDITIVE (Phase-7 DA-049): the MANDATORY grounding system instruction (spec §5.9), used
+    /// VERBATIM as the LLM <c>System</c> message on every RAG ask. Also the canonical source of the
+    /// not-found phrase the orchestrator returns (short-circuit) and detects (post-LLM).
+    /// </summary>
+    string RagGroundingSystemPrompt { get; }
+
+    /// <summary>
+    /// ADDITIVE (Phase-7 DA-049): the EXACT canned not-found answer (spec §5.9 / §13.3) — returned by
+    /// the short-circuit and matched (case-insensitive) against the model's output to flag
+    /// <c>answerFound=false</c>.
+    /// </summary>
+    string RagNotFoundAnswer { get; }
 }
