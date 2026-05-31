@@ -6,6 +6,7 @@ using DocuPilot.Infrastructure.Vector;
 using DocuPilot.Repository;
 using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
+using DocuPilot.Services.Rag;
 using DocuPilot.Services.Search;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -65,6 +66,11 @@ public static class DependencyInjection
         // Phase 6: semantic search bounds — env keys Search__* (DA-045). All keys have code
         // defaults, so search works with ZERO env changes (DevOps DA-048 is optional, docs-only).
         services.Configure<SearchOptions>(configuration.GetSection(SearchOptions.SectionName));
+
+        // Phase 7: RAG question-answering bounds — env keys Rag__* (DA-049). API-only (the Worker
+        // does NOT do RAG). All keys have code defaults, so ask works with ZERO env changes (DevOps
+        // DA-052 is optional, docs-only).
+        services.Configure<RagOptions>(configuration.GetSection(RagOptions.SectionName));
 
         // System clock for testable timestamp generation. LocalFileStorage (and other
         // Infrastructure timestamp consumers) depend on TimeProvider, so it MUST be

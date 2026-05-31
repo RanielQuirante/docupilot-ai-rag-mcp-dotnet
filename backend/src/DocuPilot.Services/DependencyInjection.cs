@@ -1,5 +1,6 @@
 using DocuPilot.Services.Abstractions;
 using DocuPilot.Services.Documents;
+using DocuPilot.Services.Rag;
 using DocuPilot.Services.Search;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -47,6 +48,13 @@ public static class DependencyInjection
         // rank → batch-hydrate). Read-only; reuses the already-registered IEmbeddingClient /
         // IVectorStore / repositories. Scoped to align with the scoped repositories/DbContext.
         services.AddScoped<ISearchService, SearchService>();
+
+        // Phase 7: the RAG question-answering orchestrator (DA-049 — embed question → vector-search
+        // top-k chunks → grounding short-circuit → hydrate → context builder → chat LLM in PROSE mode
+        // → parse + not-found detection). Read-only; reuses the already-registered IEmbeddingClient /
+        // IVectorStore / ILlmClient / IPromptProvider / repositories. Scoped to align with the scoped
+        // repositories/DbContext. API-only — the Worker does NOT do RAG (ADR §7).
+        services.AddScoped<IRagService, RagService>();
 
         return services;
     }

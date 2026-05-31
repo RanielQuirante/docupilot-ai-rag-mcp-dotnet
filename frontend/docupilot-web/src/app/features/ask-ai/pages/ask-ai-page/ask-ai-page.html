@@ -1,6 +1,225 @@
-<app-page-shell title="Ask AI" subtitle="Coming soon">
-  <p class="text-sm leading-relaxed text-slate-600">
-    This slice is scaffolded as part of the vertical-slice foundation. The full Ask AI experience
-    lands in a later phase.
-  </p>
+<app-page-shell
+  title="Ask AI"
+  subtitle="Ask questions in plain English — answers are grounded in your uploaded documents"
+>
+  <!-- Question input: textarea (Enter to ask, Shift+Enter for a newline) + scope -->
+  <form
+    class="mb-5 flex flex-col gap-3"
+    (submit)="$event.preventDefault(); ask()"
+  >
+    <label class="block">
+      <span class="sr-only">Ask a question about your documents</span>
+      <textarea
+        rows="3"
+        [value]="question()"
+        (input)="onQuestionInput($any($event.target).value)"
+        (keydown)="onKeydown($event)"
+        [disabled]="isLoading()"
+        placeholder="e.g. Which contracts are expiring in the next 90 days?"
+        class="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50"
+      ></textarea>
+    </label>
+
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <label class="relative">
+        <span class="sr-only">Limit the question to a category</span>
+        <select
+          [value]="category()"
+          (change)="onCategoryChange($any($event.target).value)"
+          [disabled]="isLoading()"
+          class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50"
+        >
+          <option value="">All documents</option>
+          @for (cat of categories; track cat) {
+            <option [value]="cat">Only {{ cat }} documents</option>
+          }
+        </select>
+      </label>
+
+      <div class="flex items-center gap-3">
+        <span class="hidden text-xs text-slate-400 sm:inline">
+          Press Enter to ask · Shift+Enter for a new line
+        </span>
+        <button
+          type="submit"
+          [disabled]="!canAsk()"
+          class="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          @if (isLoading()) {
+            Thinking…
+          } @else {
+            Ask
+          }
+        </button>
+      </div>
+    </div>
+  </form>
+
+  <!-- Session transcript: completed Q&A turns (pure client-side display) -->
+  @for (turn of transcript(); track turn.id) {
+    <div class="mb-4">
+      <!-- The question -->
+      <div class="flex justify-end">
+        <p
+          class="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600 px-4 py-2 text-sm text-white"
+        >
+          {{ turn.question }}
+        </p>
+      </div>
+
+      @if (turn.answerFound) {
+        <!-- Answered: grounded answer prose + citations panel -->
+        <div class="mt-2 rounded-2xl rounded-bl-sm border border-slate-200 bg-white p-4">
+          <p class="text-sm leading-relaxed whitespace-pre-line text-slate-800">
+            {{ turn.answer }}
+          </p>
+
+          @if (turn.citations.length > 0) {
+            <div class="mt-4 border-t border-slate-100 pt-3">
+              <p class="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                Sources ({{ turn.citations.length }})
+              </p>
+              <ul class="flex flex-col gap-2">
+                @for (cite of turn.citations; track cite.documentId + '-' + cite.chunkIndex) {
+                  <li class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <a
+                        [routerLink]="['/documents', cite.documentId]"
+                        class="max-w-full truncate text-sm font-semibold text-indigo-600 hover:text-indigo-500 hover:underline"
+                        [title]="cite.fileName"
+                      >
+                        {{ cite.fileName }}
+                      </a>
+                      <div class="flex shrink-0 items-center gap-2">
+                        <span
+                          class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-500/20"
+                        >
+                          Chunk {{ cite.chunkIndex }}
+                        </span>
+                        <span
+                          class="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20 tabular-nums"
+                          [title]="'Cosine similarity ' + cite.score"
+                        >
+                          {{ formatScore(cite.score) }} match
+                        </span>
+                      </div>
+                    </div>
+                    <p class="mt-2 line-clamp-3 text-sm leading-relaxed text-slate-600">
+                      {{ cite.snippet }}
+                    </p>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      } @else {
+        <!-- Not found: the canned answer, rendered as a DISTINCT amber warning,
+             NO citations. The key "AI found nothing grounded" trust signal. -->
+        <div
+          role="alert"
+          class="mt-2 flex items-start gap-3 rounded-2xl rounded-bl-sm border border-amber-300 bg-amber-50 p-4"
+        >
+          <span
+            class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-bold text-white"
+            aria-hidden="true"
+          >
+            !
+          </span>
+          <div>
+            <p class="text-sm font-semibold text-amber-800">No grounded answer found</p>
+            <p class="mt-1 text-sm leading-relaxed text-amber-700">{{ turn.answer }}</p>
+            <p class="mt-2 text-xs text-amber-600">
+              The assistant only answers from your uploaded documents and found nothing relevant to
+              this question. Try rephrasing, or upload a document that covers it.
+            </p>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+  @switch (state()) {
+    @case ('idle') {
+      <!-- Idle: friendly pre-question chat prompt -->
+      <div
+        class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center"
+      >
+        <p class="text-sm font-medium text-slate-700">Ask anything about your documents</p>
+        <p class="mx-auto mt-1 max-w-md text-sm text-slate-500">
+          Answers are grounded in what you have uploaded — for example
+          <span class="font-medium text-slate-600">
+            “Which contracts are expiring in the next 90 days?”</span
+          >. Every answer shows the source passages it used.
+        </p>
+      </div>
+    }
+
+    @case ('loading') {
+      <!-- Loading: the CPU chat LLM is slow (tens of seconds) — persistent
+           "Thinking…" affordance so it never looks hung. Echo the question. -->
+      <div class="mb-4">
+        <div class="flex justify-end">
+          <p
+            class="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600 px-4 py-2 text-sm text-white"
+          >
+            {{ pendingQuestion() }}
+          </p>
+        </div>
+        <div
+          role="status"
+          class="mt-2 flex items-center gap-3 rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500"
+        >
+          <span
+            class="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"
+            aria-hidden="true"
+          ></span>
+          <span>
+            Thinking… reading your documents and composing a grounded answer. This can take a
+            while on first use.
+          </span>
+        </div>
+      </div>
+    }
+
+    @case ('unavailable') {
+      <!-- 503: embedder / vector / model service starting or down (retryable) -->
+      <div
+        role="alert"
+        class="rounded-xl border border-amber-200 bg-amber-50 px-5 py-6 text-sm text-amber-800"
+      >
+        <p class="font-medium">AI service is temporarily unavailable</p>
+        <p class="mt-1 text-amber-700">
+          The model or vector service is starting up or briefly busy. Please try again shortly.
+        </p>
+        <button
+          type="button"
+          (click)="retry()"
+          class="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 focus:ring-2 focus:ring-amber-500/30 focus:outline-none"
+        >
+          Try again
+        </button>
+      </div>
+    }
+
+    @case ('error') {
+      <!-- Generic transport / 500 failure -->
+      <div
+        role="alert"
+        class="rounded-xl border border-red-200 bg-red-50 px-5 py-6 text-sm text-red-800"
+      >
+        <p class="font-medium">Something went wrong</p>
+        <p class="mt-1 text-red-700">
+          The question could not be answered. The API may be unreachable — please try again.
+        </p>
+        <button
+          type="button"
+          (click)="retry()"
+          class="mt-3 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 focus:ring-2 focus:ring-red-500/30 focus:outline-none"
+        >
+          Retry
+        </button>
+      </div>
+    }
+  }
 </app-page-shell>

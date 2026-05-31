@@ -21,6 +21,8 @@
          and is loaded by PromptProvider. -->
     <EmbeddedResource Include="Llm\Prompts\ClassificationPrompt.txt" />
     <EmbeddedResource Include="Llm\Prompts\MetadataPrompt.txt" />
+    <!-- Phase 7 (DA-049): the editable RAG answer prompt (spec §13.3), loaded by PromptProvider. -->
+    <EmbeddedResource Include="Llm\Prompts\RagAnswerPrompt.txt" />
   </ItemGroup>
 
   <ItemGroup>
