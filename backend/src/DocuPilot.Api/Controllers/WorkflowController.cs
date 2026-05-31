@@ -73,9 +73,15 @@ public sealed class WorkflowController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateTask([FromBody] CreateWorkflowTaskRequest request, CancellationToken ct)
     {
-        if (request is null || request.DocumentId == Guid.Empty)
+        // A missing/unparseable body is malformed input ⇒ 400. We deliberately do NOT short-circuit an
+        // all-zeros (Guid.Empty) documentId to 400 here (DA-057-D1): an all-zeros GUID is a syntactically
+        // valid GUID that simply names a document that does not exist, so it must flow through the
+        // dispatcher → create_workflow_task → IWorkflowService.CreateTaskAsync, where the
+        // "document doesn't exist" path returns DocumentNotFound ⇒ ToolResult.NotFound ⇒ 404 — CONSISTENT
+        // with any other non-existent documentId. The dispatcher still audits the call and writes no row.
+        if (request is null)
         {
-            return BadRequest(new { error = "documentId must be a valid GUID." });
+            return BadRequest(new { error = "A request body is required." });
         }
 
         var result = await _dispatcher.InvokeAsync(

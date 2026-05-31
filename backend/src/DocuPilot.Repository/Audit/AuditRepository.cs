@@ -32,4 +32,33 @@ public sealed class AuditRepository : IAuditRepository
             .OrderByDescending(a => a.CreatedAt)
             .ToListAsync(ct);
     }
+
+    public async Task<(IReadOnlyList<AuditLog> Items, long TotalCount)> ListAsync(
+        int page, int pageSize, Guid? entityId, string? action, CancellationToken ct)
+    {
+        var query = _dbContext.Set<AuditLog>().AsNoTracking();
+
+        if (entityId is { } id)
+        {
+            query = query.Where(a => a.EntityId == id);
+        }
+
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            query = query.Where(a => a.Action == action);
+        }
+
+        var totalCount = await query.LongCountAsync(ct);
+
+        // Newest-first global timeline. An unfiltered ORDER BY CreatedAt is a scan+sort (the composite
+        // index leads with EntityId) — acceptable at POC scale (DA-058). With entityId supplied the
+        // query is covered by IX_AuditLogs_EntityId_CreatedAt.
+        var items = await query
+            .OrderByDescending(a => a.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return (items, totalCount);
+    }
 }

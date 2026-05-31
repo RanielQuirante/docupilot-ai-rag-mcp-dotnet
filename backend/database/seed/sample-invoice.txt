@@ -1,0 +1,36 @@
+INVOICE
+
+Vendor:        Brightline Cloud Solutions, LLC
+               55 Market Street, Suite 900
+               San Francisco, CA 94105
+               billing@brightlinecloud.example
+
+Bill To:       Northwind Manufacturing, Inc.
+               Accounts Payable
+               1200 Industrial Parkway
+               Columbus, OH 43215
+
+Invoice Number:   INV-2026-00842
+Invoice Date:     May 1, 2026
+Due Date:         May 31, 2026
+Payment Terms:    Net 30
+Purchase Order:   PO-NW-5571
+Related Contract: MSA-2024-0417
+
+----------------------------------------------------------------------
+ Line  Description                         Qty    Unit Price    Amount
+----------------------------------------------------------------------
+  1    Managed cloud hosting (May 2026)     1     $15,000.00   $15,000.00
+  2    24x7 technical support              1      $2,500.00    $2,500.00
+  3    Additional storage (2 TB)            2        $500.00    $1,000.00
+----------------------------------------------------------------------
+                                            Subtotal:          $18,500.00
+                                            Tax (0%):               $0.00
+                                            TOTAL DUE:         $18,500.00
+----------------------------------------------------------------------
+
+Remit payment by the Due Date to avoid a 1.5% monthly late fee.
+Make checks payable to Brightline Cloud Solutions, LLC, or pay by ACH to
+the account on file. Questions? Contact billing@brightlinecloud.example.
+
+Thank you for your business.

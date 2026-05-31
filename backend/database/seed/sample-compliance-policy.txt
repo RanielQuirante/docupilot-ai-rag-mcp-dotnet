@@ -1,0 +1,53 @@
+DATA RETENTION & COMPLIANCE POLICY
+
+Policy Number:   POL-COMP-007
+Version:         3.1
+Effective Date:  January 1, 2026
+Policy Owner:    Office of the Chief Compliance Officer
+Review Cycle:    Annual (next review: January 2027)
+Applies To:      All employees, contractors, and systems handling company data
+
+1. PURPOSE
+   This policy establishes how Northwind Manufacturing, Inc. classifies,
+   retains, archives, and securely disposes of business records in order to
+   meet legal, regulatory, and contractual obligations and to minimize risk.
+
+2. SCOPE
+   This policy covers all records regardless of format (paper, electronic,
+   email, and documents stored in the enterprise document platform), including
+   contracts, invoices, employee records, and operational documentation.
+
+3. RECORD CLASSIFICATION
+   Records are classified into four categories, each with its own handling
+   rules: Public, Internal, Confidential, and Restricted (PII / regulated).
+   Employee records and anything containing personally identifiable
+   information are classified Restricted by default.
+
+4. RETENTION SCHEDULE
+   - Contracts and legal agreements:   7 years after expiration or termination
+   - Financial records and invoices:   7 years after the close of the fiscal year
+   - Employee personnel records:       7 years after end of employment
+   - Compliance and audit logs:        5 years
+   - General correspondence:           2 years
+
+5. SECURE DISPOSAL
+   Upon reaching the end of its retention period, a record must be securely
+   destroyed: electronic records by cryptographic erasure or secure deletion,
+   and paper records by cross-cut shredding. Disposal events must be logged.
+
+6. ACCESS CONTROL & AUDITING
+   Access to Confidential and Restricted records is granted on a least-privilege
+   basis. All access to and actions on regulated records must be auditable.
+   Automated systems that act on documents must record an audit trail of every
+   action they take.
+
+7. LEGAL HOLD
+   When litigation or an investigation is reasonably anticipated, the normal
+   retention schedule is SUSPENDED for affected records until the hold is
+   lifted by the Legal department. Destruction of records under legal hold is
+   strictly prohibited.
+
+8. ENFORCEMENT
+   Violations of this policy may result in disciplinary action up to and
+   including termination, and may expose the company to legal and regulatory
+   penalties. Questions should be directed to compliance@northwind.example.

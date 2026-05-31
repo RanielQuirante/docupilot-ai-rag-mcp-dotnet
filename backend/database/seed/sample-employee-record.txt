@@ -1,0 +1,36 @@
+EMPLOYEE RECORD — CONFIDENTIAL (HR USE ONLY)
+
+Employee Name:     Marcus Delgado
+Employee ID:       EMP-10472
+Job Title:         Senior Software Engineer
+Department:        Engineering
+Reports To:        Aisha Nkeme, Director of Engineering
+Employment Type:   Full-time, Salaried (Exempt)
+Work Location:     Columbus, OH (Hybrid)
+
+Hire Date:         March 14, 2022
+Most Recent Review: February 2026 — Rating: Exceeds Expectations
+Annual Base Salary: USD $142,000
+
+EMERGENCY CONTACT
+  Name:            Sofia Delgado (Spouse)
+  Phone:           (614) 555-0193
+
+BENEFITS ENROLLMENT
+  Medical:         Enrolled — Plan PPO-Gold
+  Dental/Vision:   Enrolled
+  401(k):          Enrolled — 6% contribution, 4% employer match
+  PTO Balance:     112 hours accrued
+
+CERTIFICATIONS & TRAINING
+  - AWS Certified Solutions Architect (valid through November 2026)
+  - Annual Security Awareness Training completed January 2026
+  - Data Handling & Privacy Training completed January 2026
+
+NOTES
+  Marcus leads the document-platform backend team and is the technical owner
+  of the ingestion pipeline. Eligible for promotion review in Q3 2026.
+
+This record contains personally identifiable information (PII) and is subject
+to the company's Data Retention & Compliance Policy. Access is restricted to
+Human Resources and the employee's direct management chain.

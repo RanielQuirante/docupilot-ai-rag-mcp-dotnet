@@ -233,4 +233,17 @@ public sealed class DocumentRepository : IDocumentRepository
 
         return (items, totalCount);
     }
+
+    public async Task<IReadOnlyDictionary<DocumentStatus, int>> CountByStatusAsync(CancellationToken ct)
+    {
+        // Single GROUP BY Status aggregate — no rows materialized, server-side COUNT. Backed by
+        // IX_Documents_Status (DA-058 dashboard stats). Statuses with zero rows are absent.
+        var grouped = await _dbContext.Set<Document>()
+            .AsNoTracking()
+            .GroupBy(d => d.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        return grouped.ToDictionary(x => x.Status, x => x.Count);
+    }
 }

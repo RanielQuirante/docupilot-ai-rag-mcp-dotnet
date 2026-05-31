@@ -61,4 +61,12 @@ public sealed class WorkflowTaskRepository : IWorkflowTaskRepository
                      && t.TaskType == taskType,
                 ct);
     }
+
+    public async Task<int> CountByStatusAsync(WorkflowTaskStatus status, CancellationToken ct)
+    {
+        // Single server-side COUNT, backed by IX_WorkflowTasks_Status (DA-058 dashboard stats).
+        return await _dbContext.Set<WorkflowTask>()
+            .AsNoTracking()
+            .CountAsync(t => t.Status == status, ct);
+    }
 }

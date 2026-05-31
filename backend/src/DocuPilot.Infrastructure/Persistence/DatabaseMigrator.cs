@@ -2,6 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
+// IsSqlServer() lives in the SqlServer provider's extension namespace (the Infrastructure project
+// already references Microsoft.EntityFrameworkCore.SqlServer).
+
 namespace DocuPilot.Infrastructure.Persistence;
 
 /// <summary>
@@ -34,6 +37,21 @@ public static class DatabaseMigrator
         var sp = scope.ServiceProvider;
         var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(DatabaseMigrator));
         var dbContext = sp.GetRequiredService<DocuPilotDbContext>();
+
+        // The committed migrations are SQL Server-specific. When a host swaps in a different relational
+        // provider whose migrations were never generated (notably the SQLite provider used by the
+        // integration-test WebApplicationFactory — DA-062), MigrateAsync would fail. Detect that case and
+        // create the schema directly from the model with EnsureCreated instead. SQL Server (production)
+        // keeps the full migrate-on-boot path below unchanged.
+        if (!dbContext.Database.IsSqlServer())
+        {
+            logger.LogInformation(
+                "Non-SQL-Server provider ({Provider}) detected; creating schema via EnsureCreated (no migrations).",
+                dbContext.Database.ProviderName);
+            await dbContext.Database.EnsureCreatedAsync(ct);
+            logger.LogInformation("Database schema ensured (EnsureCreated).");
+            return;
+        }
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {

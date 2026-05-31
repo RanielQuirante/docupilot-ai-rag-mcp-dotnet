@@ -1,4 +1,5 @@
 using DocuPilot.Models.Entities;
+using DocuPilot.Models.Enums;
 
 namespace DocuPilot.Repository.Abstractions;
 
@@ -133,4 +134,12 @@ public interface IDocumentRepository
     /// changes.
     /// </summary>
     Task<IReadOnlyList<Document>> GetByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct);
+
+    /// <summary>
+    /// Dashboard aggregate (Phase 9, DA-058): a single <c>GROUP BY Status</c> returning the document
+    /// count for each <see cref="DocumentStatus"/> that has at least one row. Read-only / no row
+    /// materialization (no N+1). Backed by <c>IX_Documents_Status</c>. Statuses with zero rows are
+    /// simply absent from the dictionary (the caller treats a missing key as 0).
+    /// </summary>
+    Task<IReadOnlyDictionary<DocumentStatus, int>> CountByStatusAsync(CancellationToken ct);
 }

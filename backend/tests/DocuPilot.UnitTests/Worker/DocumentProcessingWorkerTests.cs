@@ -49,7 +49,11 @@ public sealed class DocumentProcessingWorkerTests
             .ReturnsAsync(0);
     }
 
-    private DocumentProcessingWorker CreateSut(int pollSeconds = 1, int stuckMinutes = 15, int transientBackoffTicks = 6)
+    private DocumentProcessingWorker CreateSut(
+        int pollSeconds = 1,
+        int stuckMinutes = 15,
+        int transientBackoffTicks = 6,
+        IDatabaseReadinessProbe? readinessProbe = null)
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => _processor.Object);
@@ -65,8 +69,14 @@ public sealed class DocumentProcessingWorkerTests
             TransientBackoffTicks = transientBackoffTicks,
         });
 
+        // DA-044-D1: default to an always-ready probe so these poll-loop tests start ticking
+        // immediately (the readiness gate is covered separately in DatabaseReadinessGateTests and
+        // the Gate_* test below). A test may inject a not-yet-ready probe to assert the gate blocks.
+        IDatabaseReadinessProbe probe = readinessProbe ?? AlwaysReadyProbe();
+
         return new DocumentProcessingWorker(
             provider.GetRequiredService<IServiceScopeFactory>(),
+            probe,
             options,
             NullLogger<DocumentProcessingWorker>.Instance);
     }
@@ -79,6 +89,83 @@ public sealed class DocumentProcessingWorkerTests
         var completed = await Task.WhenAny(signal, Task.Delay(TimeSpan.FromSeconds(8), cts.Token));
         await sut.StopAsync(CancellationToken.None);
         completed.Should().Be(signal, "the worker should have done its work before the timeout");
+    }
+
+    private static IDatabaseReadinessProbe AlwaysReadyProbe()
+    {
+        var probe = new Mock<IDatabaseReadinessProbe>();
+        probe.Setup(p => p.IsReadyAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        return probe.Object;
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Phase 9 — DA-044-D1: the boot-time DB-readiness gate. The poll loop must NOT tick until the
+    // readiness probe reports ready (reachable + fully migrated) — this is what removes the
+    // transient `Invalid object name 'AuditLogs'` boot noise on a fresh stack.
+    // ----------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Gate_WaitsForReadiness_DoesNotPollUntilDbIsMigrated()
+    {
+        // The probe reports NOT ready for the first few calls, then ready — modelling the API still
+        // applying migrations. The poll loop's first selection query (GetNextQueuedIdsAsync) must
+        // NOT fire until the probe flips to ready.
+        var id = Guid.CreateVersion7();
+        _documents
+            .SetupSequence(r => r.GetNextQueuedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { id })
+            .ReturnsAsync(Array.Empty<Guid>());
+
+        var probeCalls = 0;
+        var probe = new Mock<IDatabaseReadinessProbe>();
+        probe
+            .Setup(p => p.IsReadyAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => Interlocked.Increment(ref probeCalls) >= 3); // not ready twice, then ready
+
+        var firstPoll = new TaskCompletionSource();
+        _documents
+            .Setup(r => r.GetNextQueuedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback(() => firstPoll.TrySetResult())
+            .ReturnsAsync(Array.Empty<Guid>());
+
+        var processed = new TaskCompletionSource();
+        _processor
+            .Setup(p => p.ProcessAsync(id, It.IsAny<CancellationToken>()))
+            .Callback(() => processed.TrySetResult())
+            .ReturnsAsync(ProcessingOutcome.Succeeded);
+
+        // pollSeconds=1 so the gate's 2s probe-backoff dominates the early boot window.
+        var sut = CreateSut(pollSeconds: 1, readinessProbe: probe.Object);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await sut.StartAsync(cts.Token);
+
+        // The loop must only begin once the probe reported ready (≥ 3 probe calls).
+        await Task.WhenAny(firstPoll.Task, Task.Delay(TimeSpan.FromSeconds(12), cts.Token));
+        await sut.StopAsync(CancellationToken.None);
+
+        firstPoll.Task.IsCompletedSuccessfully.Should().BeTrue("the poll loop should start after the DB became ready");
+        probeCalls.Should().BeGreaterThanOrEqualTo(3, "the gate must keep probing while the DB is not yet migrated");
+    }
+
+    [Fact]
+    public async Task Gate_NeverReady_DoesNotPoll_AndStopsCleanly()
+    {
+        // A perpetually-not-ready DB: the gate must keep waiting (no crash) and the poll loop must
+        // never run a selection query. Stopping the host must still be clean.
+        var probe = new Mock<IDatabaseReadinessProbe>();
+        probe.Setup(p => p.IsReadyAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var sut = CreateSut(pollSeconds: 1, readinessProbe: probe.Object);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await sut.StartAsync(cts.Token);
+        await Task.Delay(TimeSpan.FromSeconds(3), cts.Token); // a few probe cycles
+        await sut.StopAsync(CancellationToken.None);
+
+        _documents.Verify(
+            r => r.GetNextQueuedIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "the poll loop must never tick while the DB is not ready");
+        probe.Verify(p => p.IsReadyAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     [Fact]

@@ -20,4 +20,19 @@ public interface IAuditRepository
     /// CreatedAt DESC</c>), backed by <c>IX_AuditLogs_EntityId_CreatedAt</c>.
     /// </summary>
     Task<IReadOnlyList<AuditLog>> ListByEntityAsync(Guid entityId, CancellationToken ct);
+
+    /// <summary>
+    /// Global audit-log list (Phase 9, DA-058): returns one page of audit rows ordered
+    /// <c>CreatedAt DESC</c> (newest-first) together with the total matching row count for pagination.
+    /// Optional filters: <paramref name="entityId"/> (when supplied the query is covered by
+    /// <c>IX_AuditLogs_EntityId_CreatedAt</c>) and <paramref name="action"/> (the <c>AuditAction</c>
+    /// enum-name string; the caller validates it before calling). No-tracking — a pure read.
+    /// </summary>
+    /// <param name="page">1-based page number (assumed already normalized by the caller).</param>
+    /// <param name="pageSize">Page size (assumed already capped by the caller).</param>
+    /// <param name="entityId">Optional entity-id filter (<c>null</c> ⇒ no filter on this dimension).</param>
+    /// <param name="action">Optional action-name filter (<c>null</c> ⇒ no filter on this dimension).</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<(IReadOnlyList<AuditLog> Items, long TotalCount)> ListAsync(
+        int page, int pageSize, Guid? entityId, string? action, CancellationToken ct);
 }

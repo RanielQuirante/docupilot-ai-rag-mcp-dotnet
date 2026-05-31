@@ -13,6 +13,21 @@ The project demonstrates how enterprise SaaS products can use private LLM infras
 
 This POC is designed for document management, records management, legal operations, HR records, compliance files, invoices, and enterprise content management use cases.
 
+**The full feature set (all eight pages, end-to-end):** drag-and-drop **upload**
+→ a private-LLM document pipeline (**text extraction → classification →
+metadata extraction → chunking → embeddings**) → a searchable **library** and
+per-document **detail** view → **semantic search** by meaning → **RAG
+question-answering** with source citations and a no-hallucination guard →
+AI **workflow recommendations** turned into validated tasks through an audited,
+MCP-style tool → an at-a-glance **dashboard** and a complete **audit-log**
+timeline of every AI action.
+
+| Want to… | Read |
+| --- | --- |
+| **Run the end-to-end demo** (the 8-step employer walkthrough + seed data) | **[DEMO.md](./DEMO.md)** |
+| **Understand how it's built** (services, pipeline, RAG, tool layer, data model) | **[ARCHITECTURE.md](./ARCHITECTURE.md)** |
+| **Set up and run the stack** | this README (below) |
+
 ---
 
 ## Prerequisites
@@ -67,6 +82,8 @@ Once the stack is up, these endpoints are published on `localhost` (ports are ov
 | API search | http://localhost:5010/api/search | Semantic search (`POST`, NL query → ranked docs; Phase 6) |
 | API ask | http://localhost:5010/api/ask | RAG question-answering (`POST`, NL question → grounded answer + citations; Phase 7) |
 | API workflows | http://localhost:5010/api/workflows/recommend | AI workflow recommendation + controlled tools (`/api/workflow-tasks`, `/api/tools`, `/api/agent/recommend-and-create`; Phase 8) |
+| API dashboard | http://localhost:5010/api/dashboard/stats | At-a-glance counts + classification breakdown (`GET`; Phase 9) |
+| API audit logs | http://localhost:5010/api/audit-logs | Global newest-first audit timeline, paged + filterable (`GET`; Phase 9) |
 | Web | http://localhost:4210 | Angular SPA (served by NGINX) |
 | SQL Server | localhost:1433 | Relational metadata store (SA login) |
 | Qdrant HTTP | http://localhost:6333 | Vector DB REST API + dashboard |
@@ -87,6 +104,37 @@ The web container also reverse-proxies `/api/*` to the API service internally, s
    curl http://localhost:5010/health
    # {"status":"healthy","service":"DocuPilot.Api","version":"0.1.0","timestamp":"..."}
    ```
+
+The eight feature pages are reachable from the sidebar (and directly):
+**Dashboard** (`/dashboard`), **Upload** (`/upload`), **Library** (`/library`),
+document **Detail** (`/documents/:id`), **Search** (`/search`), **Ask AI**
+(`/ask`), **Tasks** (`/tasks`), and **Audit Logs** (`/audit`).
+
+---
+
+## Seed the demo data
+
+To populate a running stack with four realistic sample documents (a contract, an
+invoice, an employee record, and a compliance policy) for the demo, run the
+**manual** seed script — it uploads all four to `POST /api/documents/upload` in
+one call, then the Worker classifies, extracts, chunks, and embeds them. It is
+intentionally **not** an automatic startup seeder, so a fresh demo stays
+predictable (you can show the empty → populated transition live).
+
+```powershell
+# Windows (PowerShell) — the host default
+cd code\backend\database\seed
+.\seed-demo.ps1                        # uploads via http://localhost:4210
+```
+```bash
+# macOS / Linux
+cd code/backend/database/seed
+./seed-demo.sh                         # or: ./seed-demo.sh http://localhost:5010
+```
+
+The four `.txt` seed documents and both seed scripts live in
+`code/backend/database/seed/`. See **[DEMO.md](./DEMO.md)** for the full,
+step-by-step employer walkthrough that uses them.
 
 ---
 
@@ -148,29 +196,28 @@ code/
 
 ---
 
-## Phase 1 scope
+## Features (implemented across Phases 1–9)
 
-Phase 1 is the **runnable foundation** — the goal is "clone, `docker compose up`, see a healthy app shell in the browser." It establishes the project structure, container images, and the end-to-end wire (browser → Angular → API).
+All eight product pages are built and wired end-to-end on the six-service stack:
 
-**Implemented in Phase 1:**
+- **Document upload** — drag-and-drop, multi-file, with upload + processing status.
+- **Text-extraction pipeline** — the Worker extracts text from `.txt` / `.pdf` / `.docx` and advances each document through a resumable processing state machine.
+- **Automatic classification + metadata extraction** — a private LLM classifies each document (with a confidence score) and extracts structured metadata (vendor, invoice number, contract expiry, department, …).
+- **Chunking + embeddings + Qdrant** — documents are chunked, embedded with `nomic-embed-text` (768-dim), and indexed into a Qdrant vector collection.
+- **Semantic search** (`/search`) — natural-language search by meaning over the vectors, with relevance scores and matched-text snippets.
+- **RAG question-answering** (`/ask`) — document-grounded answers with **source citations** and a built-in no-hallucination guard.
+- **AI workflow recommendation + audited MCP-style tools** (`/tasks`) — the AI proposes tasks but **never writes to the DB directly**; the only mutation path is a validated, **audited** `create_workflow_task` tool.
+- **Dashboard** (`/dashboard`) — at-a-glance counts (total / pending / ready / failed / pending tasks) + classification breakdown.
+- **Audit Logs** (`/audit`) — a newest-first timeline of every document, AI, tool, and workflow event (the safety story made visible).
 
-- Six-service Docker Compose stack (API, Worker, Web, SQL Server, Qdrant, Ollama)
-- `GET /health` endpoint + Swagger UI on the API
-- Angular SPA with the layout shell, sidebar navigation, and all eight feature pages as navigable "coming soon" placeholders
-- Repository-Pattern .NET solution skeleton (projects, references, DI wiring) — build is green with `TreatWarningsAsErrors`
-- EF Core packages registered (no entities or migrations yet)
+Foundation/infrastructure: a six-service Docker Compose stack (API, Worker, Web,
+SQL Server, Qdrant, Ollama) with health-gated startup and auto-pulled models, a
+Repository-Pattern .NET 10 backend, a Vertical-Slice Angular 21 frontend, EF Core
+migrations applied at API startup, and `/health` + Swagger.
 
-**NOT yet implemented (deferred to later phases):**
-
-- Document upload, text extraction
-- LLM classification + metadata extraction
-- Chunking, embeddings, and Qdrant integration
-- Semantic search and RAG question-answering with citations
-- MCP-style tool orchestration / workflow tasks
-- EF Core entities, migrations, and real persistence
-- Authentication / authorization (intentionally out of scope for the POC)
-- Production hardening (HTTPS, secrets management), container healthchecks, OpenTelemetry
-- An Ollama model is **not** pulled in Phase 1 — only the runtime container is started (the model layer is multi-GB and lands when classification arrives)
+**Intentionally out of scope (POC):** authentication / authorization,
+multi-tenancy, and production hardening (HTTPS, secrets management,
+OpenTelemetry). See **Known limitations** below.
 
 ---
 
@@ -333,6 +380,31 @@ via the `WORKFLOW_*` variables documented in `.env.example`.
 
 **First `docker compose up --build` looks hung.**
 It is almost certainly pulling base images (SQL Server and Ollama are the big ones). Run `docker compose logs -f` or watch Docker Desktop to confirm download progress. The pull is a one-time cost.
+
+---
+
+## Known limitations (honest POC trade-offs)
+
+These are deliberate proof-of-concept choices, documented with their upgrade
+path — not defects. (See **[ARCHITECTURE.md](./ARCHITECTURE.md)** §8 for more.)
+
+- **CPU-only LLM latency.** All inference runs on CPU (no GPU assumed), so
+  classification and RAG/recommend answers take **seconds to tens of seconds**.
+  A slow first response is normal, not a hang. Upgrade path: a GPU host and/or a
+  vLLM backend (`Llm__ApiStyle`).
+- **Small chat model is phrasing-sensitive.** The default `llama3.2:3b` is a
+  small model, so RAG and workflow-recommendation phrasing can vary run-to-run
+  and occasionally read thin. The fix is a config swap — set `LLM_MODEL` (e.g. a
+  larger model) in `.env`; it is a single config value, **zero code change**.
+- **Search relevance floor (`Search__MinScore`).** Defaults to `0` for maximum
+  recall on the small seed corpus (so semantic search never returns empty). On a
+  larger corpus, raise `SEARCH_MIN_SCORE` to suppress weak off-topic matches.
+  (RAG already enforces its own `Rag__MinScore` grounding floor independently.)
+- **Scanned / image-only PDFs.** Text extraction reads embedded text; OCR for
+  scanned images is not included (a future extractor — the seam is a one-class
+  addition).
+- **No authentication / multi-tenancy / production hardening (HTTPS, secrets
+  management).** Intentionally out of scope for the POC.
 
 ---
 
