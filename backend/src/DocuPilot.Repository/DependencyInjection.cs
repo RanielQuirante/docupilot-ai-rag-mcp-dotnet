@@ -42,6 +42,10 @@ public static class DependencyInjection
         // transaction (DA-038 §P5.2.2).
         services.AddScoped<IDocumentChunkRepository, DocumentChunkRepository>();
 
+        // Phase 8 data-access seam: the workflow-task store (2nd 1:N child of Documents — DA-053).
+        // The create is stage-only (committed by IUnitOfWork alongside the audit row in one txn).
+        services.AddScoped<IWorkflowTaskRepository, WorkflowTaskRepository>();
+
         return services;
     }
 }

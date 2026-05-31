@@ -39,4 +39,27 @@ public enum AuditAction
 
     /// <summary>Embedding failed on a content fault — no text to embed (GeneratingEmbeddings → Failed) (Phase 5).</summary>
     EmbeddingFailed,
+
+    /// <summary>
+    /// A controlled MCP-style tool was invoked (Phase 8). Written by <c>IToolDispatcher</c> on entry,
+    /// AFTER schema validation passed, BEFORE the handler runs. <c>EntityName="WorkflowTool"</c>,
+    /// <c>EntityId</c> = the args' documentId when present (else <c>Guid.Empty</c>),
+    /// <c>DetailsJson = { tool, args }</c>. The "what the AI is doing" entry event.
+    /// </summary>
+    ToolInvoked,
+
+    /// <summary>
+    /// A tool invocation completed successfully (Phase 8). Written by <c>IToolDispatcher</c> on a
+    /// successful handler return, in the SAME transaction as any write the handler staged.
+    /// <c>DetailsJson = { tool, result }</c>.
+    /// </summary>
+    ToolSucceeded,
+
+    /// <summary>
+    /// A tool invocation was rejected or failed (Phase 8) — unknown tool, schema-invalid args
+    /// (rejected BEFORE the handler, zero DB effect), a domain rejection (e.g. document not found),
+    /// or a handler exception. <c>DetailsJson = { tool, error }</c>. The safety audit trail: every
+    /// bad/blocked AI request leaves a record but never a raw write.
+    /// </summary>
+    ToolFailed,
 }

@@ -20,6 +20,10 @@ import {
   DocumentTextResponse,
   NON_TERMINAL_STATUSES,
 } from '../../data/document-detail.models';
+import {
+  CreatedWorkflowTask,
+  WorkflowRecommendation,
+} from '../../data/workflow-action.models';
 
 /** One rendered metadata field (a key + its display value + whether it was nested). */
 interface MetadataRow {
@@ -80,6 +84,57 @@ const CATEGORY_BADGE_FALLBACK = 'bg-slate-100 text-slate-700 ring-slate-500/20';
 /** Re-poll cadence while the document is in a non-terminal state. */
 const POLL_INTERVAL_MS = 5000;
 
+/**
+ * Full literal Tailwind class strings per workflow priority chip — no runtime
+ * concatenation so Tailwind's Oxide engine never purges them (DA-011 §6.6).
+ * Matches the `workflow-tasks` page palette.
+ */
+const PRIORITY_CHIP_CLASSES: Readonly<Record<string, string>> = {
+  Low: 'bg-slate-100 text-slate-700 ring-slate-500/20',
+  Normal: 'bg-sky-100 text-sky-800 ring-sky-600/20',
+  High: 'bg-rose-100 text-rose-800 ring-rose-600/20',
+};
+const PRIORITY_CHIP_FALLBACK = 'bg-slate-100 text-slate-600 ring-slate-500/20';
+
+/**
+ * Lifecycle of the Phase-8 recommend/create action panel:
+ *  - `idle`         — nothing requested yet (the "Recommend workflow" button).
+ *  - `analyzing`    — the recommend LLM call is in flight ("Analyzing…", slow CPU).
+ *  - `recommended`  — a recommendation is shown; the user can "Create task".
+ *  - `creating`     — the create-task call is in flight.
+ *  - `created`      — a task was created; show the confirmation + a link to /tasks.
+ *  - `notClassified`— 409: the document is not yet classified.
+ *  - `unavailable`  — 503: the AI is temporarily unavailable.
+ *  - `error`        — generic failure.
+ */
+type WorkflowActionState =
+  | 'idle'
+  | 'analyzing'
+  | 'recommended'
+  | 'creating'
+  | 'created'
+  | 'notClassified'
+  | 'unavailable'
+  | 'error';
+
+/** Map a recommended workflow name to a sensible assigned team for the create call. */
+function teamForWorkflow(workflow: string): string {
+  const w = workflow.toLowerCase();
+  if (w.includes('legal')) {
+    return 'Legal';
+  }
+  if (w.includes('finance') || w.includes('invoice') || w.includes('payment')) {
+    return 'Finance';
+  }
+  if (w.includes('compliance')) {
+    return 'Compliance';
+  }
+  if (w.includes('hr') || w.includes('employee')) {
+    return 'HR';
+  }
+  return 'Operations';
+}
+
 @Component({
   selector: 'app-document-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -116,6 +171,17 @@ export class DocumentDetailPage {
   protected readonly processing = signal<boolean>(false);
   protected readonly processMessage = signal<string | null>(null);
   protected readonly processIsError = signal<boolean>(false);
+
+  // --- Phase 8: workflow recommend / create action (ADR §7 / Q4) ---
+  protected readonly workflowState = signal<WorkflowActionState>('idle');
+  protected readonly recommendation = signal<WorkflowRecommendation | null>(null);
+  protected readonly createdTask = signal<CreatedWorkflowTask | null>(null);
+
+  /** True while a recommend/create request is in flight (disables the action buttons). */
+  protected readonly workflowBusy = computed<boolean>(() => {
+    const s = this.workflowState();
+    return s === 'analyzing' || s === 'creating';
+  });
 
   /**
    * True while the document is still being worked
@@ -313,6 +379,131 @@ export class DocumentDetailPage {
           }
         },
       });
+  }
+
+  // --- Phase 8: workflow recommend / create ---
+
+  /**
+   * `POST /api/workflows/recommend` — ask the AI to recommend a workflow for
+   * this document. Slow CPU LLM → "Analyzing…". 409 → not classified; 503 →
+   * unavailable.
+   */
+  protected recommendWorkflow(): void {
+    if (this.workflowBusy()) {
+      return;
+    }
+    this.workflowState.set('analyzing');
+    this.recommendation.set(null);
+    this.createdTask.set(null);
+    this.client
+      .recommendWorkflow(this.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (outcome) => {
+          switch (outcome.kind) {
+            case 'recommendation':
+              this.recommendation.set(outcome.recommendation);
+              this.workflowState.set('recommended');
+              break;
+            case 'notClassified':
+              this.workflowState.set('notClassified');
+              break;
+            case 'unavailable':
+              this.workflowState.set('unavailable');
+              break;
+            case 'error':
+              this.workflowState.set('error');
+              break;
+          }
+        },
+        error: () => this.workflowState.set('error'),
+      });
+  }
+
+  /**
+   * `POST /api/workflow-tasks` — create a task from the current recommendation
+   * (the validated, audited write). The assigned team is derived from the
+   * recommended workflow name.
+   */
+  protected createTask(): void {
+    const rec = this.recommendation();
+    if (rec === null || this.workflowBusy()) {
+      return;
+    }
+    this.workflowState.set('creating');
+    this.client
+      .createTask({
+        documentId: this.id,
+        taskType: rec.recommendedWorkflow,
+        assignedTeam: teamForWorkflow(rec.recommendedWorkflow),
+        priority: rec.priority,
+        reason: rec.reason,
+      })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (outcome) => this.applyCreateOutcome(outcome),
+        error: () => this.workflowState.set('error'),
+      });
+  }
+
+  /**
+   * `POST /api/agent/recommend-and-create` — the one-click constrained pipeline
+   * (recommend → create). Shows "Analyzing…" then the created-task confirmation.
+   */
+  protected recommendAndCreate(): void {
+    if (this.workflowBusy()) {
+      return;
+    }
+    this.workflowState.set('analyzing');
+    this.recommendation.set(null);
+    this.createdTask.set(null);
+    this.client
+      .recommendAndCreate(this.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (outcome) => {
+          if (outcome.kind === 'created' && outcome.recommendation) {
+            this.recommendation.set(outcome.recommendation);
+          }
+          this.applyCreateOutcome(outcome);
+        },
+        error: () => this.workflowState.set('error'),
+      });
+  }
+
+  /** Map a create/agent outcome to the panel state. */
+  private applyCreateOutcome(outcome: {
+    readonly kind: 'created' | 'notClassified' | 'unavailable' | 'error';
+    readonly task?: CreatedWorkflowTask;
+  }): void {
+    switch (outcome.kind) {
+      case 'created':
+        if (outcome.task) {
+          this.createdTask.set(outcome.task);
+        }
+        this.workflowState.set('created');
+        break;
+      case 'notClassified':
+        this.workflowState.set('notClassified');
+        break;
+      case 'unavailable':
+        this.workflowState.set('unavailable');
+        break;
+      case 'error':
+        this.workflowState.set('error');
+        break;
+    }
+  }
+
+  /** Reset the workflow action panel back to the initial "Recommend workflow" prompt. */
+  protected resetWorkflow(): void {
+    this.workflowState.set('idle');
+    this.recommendation.set(null);
+    this.createdTask.set(null);
+  }
+
+  protected priorityChipClass(priority: string): string {
+    return PRIORITY_CHIP_CLASSES[priority] ?? PRIORITY_CHIP_FALLBACK;
   }
 
   /** Start/stop polling so the displayed status tracks the live pipeline. */

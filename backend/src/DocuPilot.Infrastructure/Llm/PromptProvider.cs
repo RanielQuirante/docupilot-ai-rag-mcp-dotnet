@@ -22,8 +22,14 @@ public sealed class PromptProvider : IPromptProvider
     private static readonly string RagAnswerTemplate =
         LoadResource("DocuPilot.Infrastructure.Llm.Prompts.RagAnswerPrompt.txt");
 
+    private static readonly string WorkflowRecommendationTemplate =
+        LoadResource("DocuPilot.Infrastructure.Llm.Prompts.WorkflowRecommendationPrompt.txt");
+
     private static readonly string AllowedCategoriesList =
         string.Join("\n", DocumentCategoryNames.DisplayNames.Select(name => $"- {name}"));
+
+    private static readonly string AllowedPrioritiesList =
+        string.Join(", ", WorkflowPriorityNames.Names);
 
     // The MANDATORY grounding system instruction (spec §5.9), used VERBATIM as the LLM System message
     // on every RAG ask. NOT loaded from a resource — kept inline as the authoritative grounding
@@ -55,6 +61,13 @@ public sealed class PromptProvider : IPromptProvider
     public string RagGroundingSystemPrompt => RagGroundingSystem;
 
     public string RagNotFoundAnswer => RagNotFound;
+
+    public string BuildWorkflowRecommendationPrompt(string classification, string metadataJson, string documentText) =>
+        WorkflowRecommendationTemplate
+            .Replace("{{allowedPriorities}}", AllowedPrioritiesList)
+            .Replace("{{classification}}", classification)
+            .Replace("{{metadata}}", metadataJson)
+            .Replace("{{documentText}}", documentText);
 
     private static string LoadResource(string resourceName)
     {

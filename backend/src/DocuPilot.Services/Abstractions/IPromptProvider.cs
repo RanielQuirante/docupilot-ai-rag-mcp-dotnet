@@ -44,4 +44,15 @@ public interface IPromptProvider
     /// <c>answerFound=false</c>.
     /// </summary>
     string RagNotFoundAnswer { get; }
+
+    /// <summary>
+    /// ADDITIVE (Phase-8 DA-054): builds the workflow-recommendation prompt (spec §5.11/§13.4),
+    /// injecting the document's <c>{{classification}}</c> display string, its extracted
+    /// <c>{{metadata}}</c> JSON, and a (truncated) <c>{{documentText}}</c> excerpt. The allowed
+    /// priority list (<c>{{allowedPriorities}}</c>) is filled from the <c>WorkflowPriority</c> source
+    /// of truth so the prompt and the coercer never drift. This is a JSON-mode call (the Phase-4
+    /// classification posture, NOT the Phase-7 prose mode) — the orchestrator calls the LLM with
+    /// <c>JsonMode=true</c> and validates/coerces the result.
+    /// </summary>
+    string BuildWorkflowRecommendationPrompt(string classification, string metadataJson, string documentText);
 }
