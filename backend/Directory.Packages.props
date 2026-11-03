@@ -7,25 +7,25 @@
 
   <ItemGroup>
     <!-- ASP.NET Core / Hosting (aligned to .NET 10 LTS) -->
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.14" />
 
     <!-- EF Core 10 (aligned to .NET 10 LTS) -->
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.14" />
     <!-- Integration tests (DA-062): in-process SQLite (in-memory, connection kept open for the
          test lifetime) exercises the real EF model + repositories with no SQL Server dependency. -->
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" />
 
     <!-- Text extraction (Phase 3 / DA-024). Pure-managed, container-friendly, no native deps.
          PdfPig (namespace UglyToad.PdfPig, MIT) for selectable-text PDFs; DocumentFormat.OpenXml
@@ -48,7 +48,7 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
 
     <!-- Testing -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
@@ -56,10 +56,13 @@
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
 
-    <!-- Transitive pin: addresses NU1903 (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf)
-         on System.Security.Cryptography.Xml 9.0.0 pulled in by EF Core 10.0.0
-         and the test SDK. 10.0.8 is the latest patched release. -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.8" />
+    <!-- Transitive pins for NuGet audit (NU1902/NU1903 fail the build under TreatWarningsAsErrors).
+         System.Security.Cryptography.Xml: GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, GHSA-23rf-6693-g89p,
+         GHSA-c399-9853-6jmj and others; first patched 10.0.13.
+         System.Security.Cryptography.Pkcs: GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7; first patched 10.0.13.
+         Pulled in by EF Core, Serilog and the test SDK. -->
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.14" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
   </ItemGroup>
 
 </Project>
